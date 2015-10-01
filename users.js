@@ -794,11 +794,11 @@ User = (function () {
 
 			var self = this;
 			Verifier.verify(tokenData, tokenSig, function (success, tokenData) {
-				if (!success) {
-					console.log('verify failed: ' + token);
-					console.log('challenge was: ' + challenge);
-					return;
-				}
+				// if (!success) {
+				// 	console.log('verify failed: ' + token);
+				// 	console.log('challenge was: ' + challenge);
+				// 	return;
+				// }
 				self.validateRename(name, tokenData, newlyRegistered, challenge);
 			});
 		} else {
@@ -810,59 +810,59 @@ User = (function () {
 	User.prototype.validateRename = function (name, tokenData, newlyRegistered, challenge) {
 		var userid = toId(name);
 
-		var tokenDataSplit = tokenData.split(',');
+		// var tokenDataSplit = tokenData.split(',');
 
-		if (tokenDataSplit.length < 5) {
-			console.log('outdated assertion format: ' + tokenData);
-			this.send('|nametaken|' + name + "|Your assertion is stale. This usually means that the clock on the server computer is incorrect. If this is your server, please set the clock to the correct time.");
-			return;
-		}
+		// if (tokenDataSplit.length < 5) {
+		// 	console.log('outdated assertion format: ' + tokenData);
+		// 	this.send('|nametaken|' + name + "|Your assertion is stale. This usually means that the clock on the server computer is incorrect. If this is your server, please set the clock to the correct time.");
+		// 	return;
+		// }
 
-		if (tokenDataSplit[1] !== userid) {
-			// userid mismatch
-			return;
-		}
+		// if (tokenDataSplit[1] !== userid) {
+		// 	// userid mismatch
+		// 	return;
+		// }
 
-		if (tokenDataSplit[0] !== challenge) {
-			// a user sent an invalid token
-			if (tokenDataSplit[0] !== challenge) {
-				console.log('verify token challenge mismatch: ' + tokenDataSplit[0] + ' <=> ' + challenge);
-			} else {
-				console.log('verify token mismatch: ' + tokenData);
-			}
-			return;
-		}
+		// if (tokenDataSplit[0] !== challenge) {
+		// 	// a user sent an invalid token
+		// 	if (tokenDataSplit[0] !== challenge) {
+		// 		console.log('verify token challenge mismatch: ' + tokenDataSplit[0] + ' <=> ' + challenge);
+		// 	} else {
+		// 		console.log('verify token mismatch: ' + tokenData);
+		// 	}
+		// 	return;
+		// }
 
-		var expiry = Config.tokenexpiry || 25 * 60 * 60;
-		if (Math.abs(parseInt(tokenDataSplit[3], 10) - Date.now() / 1000) > expiry) {
-			console.log('stale assertion: ' + tokenData);
-			this.send('|nametaken|' + name + "|Your assertion is stale. This usually means that the clock on the server computer is incorrect. If this is your server, please set the clock to the correct time.");
-			return;
-		}
+		// var expiry = Config.tokenexpiry || 25 * 60 * 60;
+		// if (Math.abs(parseInt(tokenDataSplit[3], 10) - Date.now() / 1000) > expiry) {
+		// 	console.log('stale assertion: ' + tokenData);
+		// 	this.send('|nametaken|' + name + "|Your assertion is stale. This usually means that the clock on the server computer is incorrect. If this is your server, please set the clock to the correct time.");
+		// 	return;
+		// }
 
-		if (Config.tokenhosts) {
-			var host = tokenDataSplit[4];
-			if (Config.tokenhosts.length === 0) {
-				Config.tokenhosts.push(host);
-				console.log('Added ' + host + ' to valid tokenhosts');
-				require('dns').lookup(host, function (err, address) {
-					if (err || (address === host)) return;
-					Config.tokenhosts.push(address);
-					console.log('Added ' + address + ' to valid tokenhosts');
-				});
-			} else if (Config.tokenhosts.indexOf(host) < 0) {
-				console.log('invalid hostname in token: ' + tokenData);
-				this.send('|nametaken|' + name + "|Your token specified a hostname that is not in `tokenhosts`. If this is your server, please read the documentation in config/config.js for help. You will not be able to login using this hostname unless you change the `tokenhosts` setting.");
-				return;
-			}
-		}
+		// if (Config.tokenhosts) {
+		// 	var host = tokenDataSplit[4];
+		// 	if (Config.tokenhosts.length === 0) {
+		// 		Config.tokenhosts.push(host);
+		// 		console.log('Added ' + host + ' to valid tokenhosts');
+		// 		require('dns').lookup(host, function (err, address) {
+		// 			if (err || (address === host)) return;
+		// 			Config.tokenhosts.push(address);
+		// 			console.log('Added ' + address + ' to valid tokenhosts');
+		// 		});
+		// 	} else if (Config.tokenhosts.indexOf(host) < 0) {
+		// 		console.log('invalid hostname in token: ' + tokenData);
+		// 		this.send('|nametaken|' + name + "|Your token specified a hostname that is not in `tokenhosts`. If this is your server, please read the documentation in config/config.js for help. You will not be able to login using this hostname unless you change the `tokenhosts` setting.");
+		// 		return;
+		// 	}
+		// }
 
 		// future-proofing
-		this.s1 = tokenDataSplit[5];
-		this.s2 = tokenDataSplit[6];
-		this.s3 = tokenDataSplit[7];
+		// this.s1 = tokenDataSplit[5];
+		// this.s2 = tokenDataSplit[6];
+		// this.s3 = tokenDataSplit[7];
 
-		this.handleRename(name, userid, newlyRegistered, tokenDataSplit[2]);
+		this.handleRename(name, userid, newlyRegistered, 4);
 	};
 	User.prototype.handleRename = function (name, userid, newlyRegistered, userType) {
 		if (users[userid] && !users[userid].registered && users[userid].connected) {
@@ -1464,11 +1464,11 @@ User = (function () {
 			setImmediate(callback.bind(null, false));
 			return;
 		}
-		if (ResourceMonitor.countPrepBattle(connection.ip || connection.latestIp, this.name)) {
-			connection.popup("Due to high load, you are limited to 6 battles every 3 minutes.");
-			setImmediate(callback.bind(null, false));
-			return;
-		}
+		// if (ResourceMonitor.countPrepBattle(connection.ip || connection.latestIp, this.name)) {
+		// 	connection.popup("Due to high load, you are limited to 6 battles every 3 minutes.");
+		// 	setImmediate(callback.bind(null, false));
+		// 	return;
+		// }
 
 		var format = Tools.getFormat(formatid);
 		if (!format['' + type + 'Show']) {
