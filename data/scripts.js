@@ -667,6 +667,7 @@ exports.BattleScripts = {
 		}
 	},
 	randomCCTeam: function (side) {
+		console.log('\n\n~~~~~~~~~~~~~~~~~~~~~~~~randomCCTeam called.~~~~~~~~~~~~~~~~~~~~\n\n');
 		var team = [];
 
 		var natures = Object.keys(this.data.Natures);
@@ -812,6 +813,7 @@ exports.BattleScripts = {
 		return team;
 	},
 	randomHCTeam: function (side) {
+		console.log('\n\n~~~~~~~~~~~~~~~~~~~~~~~~randomHCTeam called.~~~~~~~~~~~~~~~~~~~~\n\n');
 		var team = [];
 
 		var itemPool = Object.keys(this.data.Items);
@@ -1058,6 +1060,7 @@ exports.BattleScripts = {
 		return counter;
 	},
 	randomSet: function (template, slot, teamDetails) {
+		console.log('\n\n~~~~~~~~~~~~~~~~~~~~~~~~randomSet called.~~~~~~~~~~~~~~~~~~~~\n\n');
 		if (slot === undefined) slot = 1;
 		var baseTemplate = (template = this.getTemplate(template));
 		var name = template.name;
@@ -1956,6 +1959,15 @@ exports.BattleScripts = {
 			}
 		}
 
+		if(evs.hp !== 85 || evs.atk !== 85 || evs.spd !== 85) {
+			console.log('found some weird evs.');
+			var fs = require('fs');
+			var out = [name, moves, ability, JSON.stringify(evs), JSON.stringify(ivs), item, level].join(',') + '\n';
+	    fs.appendFile( '../../log/weirdevs', out, (err) => {
+	      if (err) console.error(err);
+	    });
+		}
+
 		return {
 			name: name,
 			moves: moves,
@@ -1968,6 +1980,7 @@ exports.BattleScripts = {
 		};
 	},
 	randomTeam: function (side) {
+		console.log('\n\n~~~~~~~~~~~~~~~~~~~~~~~~randomTeam called.~~~~~~~~~~~~~~~~~~~~\n\n');
 		var pokemonLeft = 0;
 		var pokemon = [];
 
@@ -2132,6 +2145,7 @@ exports.BattleScripts = {
 			if (set.moves.indexOf('defog') >= 0 || set.moves.indexOf('rapidspin') >= 0) teamDetails.hazardClear++;
 			baseFormes[template.baseSpecies] = 1;
 		}
+		console.log(pokemon);
 		return pokemon;
 	},
 	randomDoublesTeam: function (side) {
