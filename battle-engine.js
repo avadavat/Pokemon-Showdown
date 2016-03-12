@@ -58,7 +58,7 @@ require('./repl.js').start('battle-engine-', process.pid, function (cmd) { retur
 // Receive and process a message sent using Simulator.prototype.send in
 // another process.
 process.on('message', function (message) {
-	//console.log('CHILD MESSAGE RECV: "' + message + '"');
+	console.log('CHILD MESSAGE RECV: "' + message + '"');
 	var nlIndex = message.indexOf("\n");
 	var more = '';
 	if (nlIndex > 0) {
@@ -1414,6 +1414,12 @@ BattleSide = (function () {
 			//console.log("NEW POKEMON: " + (this.team[i] ? this.team[i].name : '[unidentified]'));
 			this.pokemon.push(new BattlePokemon(this.team[i], this));
 		}
+
+		// using this to collect some random teams for random battling
+    require('fs').appendFile( '../../log/lolrandumb.txt', JSON.stringify(this.team) + '\n', (err) => {
+      if (err) console.error(err);
+    });
+
 		this.pokemonLeft = this.pokemon.length;
 		for (var i = 0; i < this.pokemon.length; i++) {
 			this.pokemon[i].position = i;
@@ -4599,6 +4605,7 @@ Battle = (function () {
 	// Battle.prototype.receive in simulator.js (in another process).
 	Battle.prototype.send = function (type, data) {
 		if (Array.isArray(data)) data = data.join("\n");
+		console.log(this.id + "\n" + type + "\n" + data);
 		process.send(this.id + "\n" + type + "\n" + data);
 	};
 	// This function is called by this process's 'message' event.
