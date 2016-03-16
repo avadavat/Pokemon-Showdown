@@ -42,7 +42,7 @@ require('./repl.js').start('battle-engine-', process.pid, cmd => eval(cmd));
 // Receive and process a message sent using Simulator.prototype.send in
 // another process.
 process.on('message', message => {
-	//console.log('CHILD MESSAGE RECV: "' + message + '"');
+	console.log('> "' + message + '"');
 	let nlIndex = message.indexOf("\n");
 	let more = '';
 	if (nlIndex > 0) {
@@ -4678,6 +4678,8 @@ Battle = (() => {
 	// Battle.prototype.receive in simulator.js (in another process).
 	Battle.prototype.send = function (type, data) {
 		if (Array.isArray(data)) data = data.join("\n");
+
+		console.log(this.id + "|" + type + "|" + data);
 		process.send(this.id + "\n" + type + "\n" + data);
 	};
 	// This function is called by this process's 'message' event.

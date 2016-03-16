@@ -257,6 +257,7 @@ class Battle {
 			this.inactiveSide = -1;
 			if (!this.ended) {
 				this.ended = true;
+				console.log('game won:', lines[2]);
 				this.room.win(lines[2]);
 				this.removeAllPlayers();
 			}

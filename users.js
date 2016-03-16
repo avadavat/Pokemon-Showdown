@@ -1414,11 +1414,13 @@ class User {
 			setImmediate(() => callback(false));
 			return;
 		}
-		if (Monitor.countPrepBattle(connection.ip || connection.latestIp, this.name)) {
-			connection.popup("Due to high load, you are limited to 6 battles every 3 minutes.");
-			setImmediate(() => callback(false));
-			return;
-		}
+
+		// don't limit # of battles
+		// if (Monitor.countPrepBattle(connection.ip || connection.latestIp, this.name)) {
+		// 	connection.popup("Due to high load, you are limited to 6 battles every 3 minutes.");
+		// 	setImmediate(() => callback(false));
+		// 	return;
+		// }
 
 		let format = Tools.getFormat(formatid);
 		if (!format['' + type + 'Show']) {
