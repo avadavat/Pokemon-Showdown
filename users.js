@@ -1490,10 +1490,10 @@ class User {
 		if (user.blockChallenges && !this.can('bypassblocks', user)) {
 			return false;
 		}
-		if (new Date().getTime() < this.lastChallenge + 10000) {
-			// 10 seconds ago
+		if (new Date().getTime() < this.lastChallenge) {
 			return false;
 		}
+
 		let time = new Date().getTime();
 		let challenge = {
 			time: time,
