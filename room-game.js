@@ -24,13 +24,13 @@ class RoomGamePlayer {
 		this.userid = user.userid;
 		this.name = user.name;
 		this.game = game;
-		user.games[this.game.id] = this.game;
+		user.games.add(this.game.id);
 		user.updateSearch();
 	}
 	destroy() {
 		let user = Users.getExact(this.userid);
 		if (user) {
-			delete user.games[this.game.id];
+			user.games.delete(this.game.id);
 			user.updateSearch();
 		}
 	}
@@ -130,10 +130,9 @@ class RoomGame {
 	//   connection joins)
 
 	// onRename(user, oldUserid, isJoining)
-	//   Called when a user in the room is renamed. NOT called when a
-	//   player outside the room is renamed. `isJoining` is true if the
-	//   user was previously a guest, but now has a username. Check
-	//   `!user.named` for the case where a user previously had a
+	//   Called when a user in the game is renamed. `isJoining` is true
+	//   if the user was previously a guest, but now has a username.
+	//   Check `!user.named` for the case where a user previously had a
 	//   username but is now a guest.
 
 	// onLeave(user)
@@ -152,6 +151,24 @@ class RoomGame {
 	// Player updates and an up-to-date report of what's going on in
 	// the game should be sent during `onConnect`. You should rarely
 	// need to handle the other events.
+
+	onRename(user, oldUserid) {
+		if (!this.allowRenames) {
+			if (!(user.userid in this.players)) {
+				user.games.delete(this.id);
+			}
+			return;
+		}
+		if (!(oldUserid in this.players)) return;
+		if (user.userid === oldUserid) {
+			this.players[user.userid].name = user.name;
+		} else {
+			this.players[user.userid] = this.players[oldUserid];
+			this.players[user.userid].userid = user.userid;
+			this.players[user.userid].name = user.name;
+			delete this.players[oldUserid];
+		}
+	}
 
 	onUpdateConnection(user, connection) {
 		if (this.onConnect) this.onConnect(user, connection);

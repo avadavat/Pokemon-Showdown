@@ -13,67 +13,30 @@
 
 'use strict';
 
-let battles = Object.create(null);
+global.Config = require('./config/config');
 
-class SimulatorProcess {
-	constructor() {
-		this.load = 0;
-		this.active = true;
+const ProcessManager = require('./process-manager');
+const BattleEngine = require('./battle-engine').Battle;
 
-		this.process = require('child_process').fork('battle-engine.js', {cwd: __dirname});
-		this.process.on('message', message => {
-			let lines = message.split('\n');
-			let battle = battles[lines[0]];
-			if (battle) {
-				battle.receive(lines);
-			}
-		});
+class SimulatorManager extends ProcessManager {
+	onMessageUpstream(message) {
+		let lines = message.split('\n');
+		let battle = this.pendingTasks.get(lines[0]);
+		if (battle) battle.receive(lines);
 	}
-	send(data) {
-		this.process.send(data);
-	}
-	static init(num) {
-		this.processes = [];
-		if (num === undefined) num = Config.simulatorprocesses || 1;
-		this.spawn(num);
-	}
-	static spawn(num) {
-		for (let i = this.processes.length; i < num; ++i) {
-			this.processes.push(new SimulatorProcess());
-		}
-	}
-	static reinit() {
-		for (let process of this.processes) {
-			process.active = false;
-			if (!process.load) process.process.disconnect();
-		}
-		this.init();
-	}
-	static acquire() {
-		let process = this.processes[0];
-		for (let i = 1; i < this.processes.length; ++i) {
-			if (this.processes[i].load < process.load) {
-				process = this.processes[i];
-			}
-		}
-		process.load++;
-		return process;
-	}
-	static release(process) {
-		process.load--;
-		if (!process.load && !process.active) {
-			process.process.disconnect();
-		}
-	}
-	static eval(code) {
+
+	eval(code) {
 		for (let process of this.processes) {
 			process.send('|eval|' + code);
 		}
 	}
 }
 
-// Create the initial set of simulator processes.
-SimulatorProcess.init();
+const SimulatorProcess = new SimulatorManager({
+	execFile: __filename,
+	maxProcesses: global.Config ? Config.simulatorprocesses : 1,
+	isChatBased: false,
+});
 
 let slice = Array.prototype.slice;
 
@@ -82,7 +45,7 @@ class BattlePlayer {
 		this.userid = user.userid;
 		this.name = user.name;
 		this.game = game;
-		user.games[this.game.id] = this.game;
+		user.games.add(this.game.id);
 		user.updateSearch();
 
 		this.slot = slot;
@@ -98,7 +61,7 @@ class BattlePlayer {
 		if (this.active) this.simSend('leave');
 		let user = Users(this.userid);
 		if (user) {
-			delete user.games[this.game.id];
+			user.games.delete(this.game.id);
 			user.updateSearch();
 			for (let j = 0; j < user.connections.length; j++) {
 				let connection = user.connections[j];
@@ -137,10 +100,6 @@ class BattlePlayer {
 
 class Battle {
 	constructor(room, format, rated) {
-		if (battles[room.id]) {
-			throw new Error("Battle with ID " + room.id + " already exists.");
-		}
-
 		this.id = room.id;
 		this.room = room;
 		this.title = Tools.getFormat(format).name;
@@ -170,9 +129,12 @@ class Battle {
 		this.inactiveQueued = false;
 
 		this.process = SimulatorProcess.acquire();
-		this.send('init', this.format, rated ? '1' : '');
+		if (this.process.pendingTasks.has(room.id)) {
+			throw new Error("Battle with ID " + room.id + " already exists.");
+		}
 
-		battles[room.id] = this;
+		this.send('init', this.format, rated ? '1' : '');
+		this.process.pendingTasks.set(room.id, this);
 	}
 
 	send() {
@@ -275,13 +237,30 @@ class Battle {
 		case 'request': {
 			let player = this[lines[2]];
 			let rqid = lines[3];
-			if (player) {
-				this.requests[player.slot] = lines[4];
-				player.sendRoom('|request|' + lines[4]);
-			}
+
 			if (rqid !== this.rqid) {
 				this.rqid = rqid;
 				this.inactiveQueued = true;
+			}
+			if (player) {
+				const isNewRequest = !this.requests[player.slot] || +this.requests[player.slot][0] < +rqid;
+				if (isNewRequest) {
+					player.choiceIndex = 0;
+				}
+				this.requests[player.slot] = [rqid, lines[4]];
+				player.sendRoom('|request|' + (player.choiceIndex ? player.choiceIndex + '|' + player.choiceData + '\n' : '') + lines[4]);
+			}
+			break;
+		}
+
+		case 'choice': {
+			let player = this[lines[2]];
+			let rqid = lines[3];
+			let choiceIndex = +lines[4];
+			let choiceData = lines[5];
+			if (rqid === this.rqid && player) {
+				player.choiceIndex = choiceIndex;
+				player.choiceData = choiceData;
 			}
 			break;
 		}
@@ -310,33 +289,42 @@ class Battle {
 		player.updateSubchannel(connection || user);
 		let request = this.requests[player.slot];
 		if (request) {
-			(connection || user).sendTo(this.id, '|request|' + request);
+			(connection || user).sendTo(this.id, '|request|' + (player.choiceIndex ? player.choiceIndex + '|' + player.choiceData + '\n' : '') + request[1]);
 		}
 	}
 	onUpdateConnection(user, connection) {
 		this.onConnect(user, connection);
 	}
-	onRename(user, oldid) {
-		if (user.userid === oldid) return;
-		let player = this.players[oldid];
-		if (player) {
-			if (!this.allowRenames && user.userid !== oldid) {
-				this.forfeit(user, " forfeited by changing their name.");
-				return;
-			}
-			if (!this.players[user]) {
-				this.players[user] = player;
-				player.userid = user.userid;
-				player.name = user.name;
-				delete this.players[oldid];
-				player.simSend('rename', user.name, user.avatar);
-			}
+	onRename(user, oldUserid) {
+		if (user.userid === oldUserid) return;
+		if (!this.players) {
+			// !! should never happen but somehow still does
+			user.games.delete(this.id);
+			return;
 		}
-		if (!player && user in this.players) {
-			// this handles a user renaming themselves into a user in the
-			// battle (e.g. by using /nick)
-			this.onConnect(user);
+		if (!(oldUserid in this.players)) {
+			if (user.userid in this.players) {
+				// this handles a user renaming themselves into a user in the
+				// battle (e.g. by using /nick)
+				this.onConnect(user);
+			}
+			return;
 		}
+		if (!this.allowRenames) {
+			let player = this.players[oldUserid];
+			if (player) this.forfeit(null, " forfeited by changing their name.", player.slotNum);
+			if (!(user.userid in this.players)) {
+				user.games.delete(this.id);
+			}
+			return;
+		}
+		if (user.userid in this.players) return;
+		let player = this.players[oldUserid];
+		this.players[user.userid] = player;
+		player.userid = user.userid;
+		player.name = user.name;
+		delete this.players[oldUserid];
+		player.simSend('rename', user.name, user.avatar);
 	}
 	onJoin(user) {
 		let player = this.players[user];
@@ -451,18 +439,123 @@ class Battle {
 		}
 		this.players = null;
 		this.room = null;
-		SimulatorProcess.release(this.process);
+		this.process.pendingTasks.delete(this.id);
+		this.process.release();
 		this.process = null;
-		delete battles[this.id];
 	}
 }
 
 exports.BattlePlayer = BattlePlayer;
 exports.Battle = Battle;
-exports.battles = battles;
+exports.SimulatorManager = SimulatorManager;
 exports.SimulatorProcess = SimulatorProcess;
 
 exports.create = function (id, format, rated, room) {
-	if (battles[id]) return battles[id];
 	return new Battle(room, format, rated);
 };
+
+if (process.send && module === process.mainModule) {
+	// This is a child process!
+
+	global.Tools = require('./tools').includeMods();
+	global.toId = Tools.getId;
+
+	if (Config.crashguard) {
+		// graceful crash - allow current battles to finish before restarting
+		process.on('uncaughtException', err => {
+			require('./crashlogger')(err, 'A simulator process');
+		});
+	}
+
+	require('./repl').start('battle-engine-', process.pid, cmd => eval(cmd));
+
+	let Battles = new Map();
+
+	// Receive and process a message sent using Simulator.prototype.send in
+	// another process.
+	process.on('message', message => {
+		//console.log('CHILD MESSAGE RECV: "' + message + '"');
+		let nlIndex = message.indexOf("\n");
+		let more = '';
+		if (nlIndex > 0) {
+			more = message.substr(nlIndex + 1);
+			message = message.substr(0, nlIndex);
+		}
+		let data = message.split('|');
+		if (data[1] === 'init') {
+			const id = data[0];
+			if (!Battles.has(id)) {
+				try {
+					Battles.set(id, BattleEngine.construct(id, data[2], data[3], sendBattleMessage));
+				} catch (err) {
+					if (require('./crashlogger')(err, 'A battle', {
+						message: message,
+					}) === 'lockdown') {
+						let ministack = Tools.escapeHTML(err.stack).split("\n").slice(0, 2).join("<br />");
+						process.send(id + '\nupdate\n|html|<div class="broadcast-red"><b>A BATTLE PROCESS HAS CRASHED:</b> ' + ministack + '</div>');
+					} else {
+						process.send(id + '\nupdate\n|html|<div class="broadcast-red"><b>The battle crashed!</b><br />Don\'t worry, we\'re working on fixing it.</div>');
+					}
+				}
+			}
+		} else if (data[1] === 'dealloc') {
+			const id = data[0];
+			if (Battles.has(id)) {
+				Battles.get(id).destroy();
+
+				// remove from battle list
+				Battles.delete(id);
+			} else {
+				require('./crashlogger')(new Error("Invalid dealloc"), 'A battle', {
+					message: message,
+				});
+			}
+		} else {
+			let battle = Battles.get(data[0]);
+			if (battle) {
+				let prevRequest = battle.currentRequest;
+				let prevRequestDetails = battle.currentRequestDetails || '';
+				try {
+					battle.receive(data, more);
+				} catch (err) {
+					require('./crashlogger')(err, 'A battle', {
+						message: message,
+						currentRequest: prevRequest,
+						log: '\n' + battle.log.join('\n').replace(/\n\|split\n[^\n]*\n[^\n]*\n[^\n]*\n/g, '\n'),
+					});
+
+					let logPos = battle.log.length;
+					battle.add('html', '<div class="broadcast-red"><b>The battle crashed</b><br />You can keep playing but it might crash again.</div>');
+					let nestedError;
+					try {
+						battle.makeRequest(prevRequest, prevRequestDetails);
+					} catch (e) {
+						nestedError = e;
+					}
+					battle.sendUpdates(logPos);
+					if (nestedError) {
+						throw nestedError;
+					}
+				}
+			} else if (data[1] === 'eval') {
+				try {
+					eval(data[2]);
+				} catch (e) {}
+			}
+		}
+	});
+
+	process.on('disconnect', () => {
+		process.exit();
+	});
+} else {
+	// Create the initial set of simulator processes.
+	SimulatorProcess.spawn();
+}
+
+// Messages sent by this function are received and handled in
+// Battle.prototype.receive in simulator.js (in another process).
+function sendBattleMessage(type, data) {
+	if (Array.isArray(data)) data = data.join("\n");
+	process.send(this.id + "\n" + type + "\n" + data);
+}

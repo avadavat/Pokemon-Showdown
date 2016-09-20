@@ -2,7 +2,7 @@
 
 const assert = require('assert');
 
-let userUtils = require('./../../dev-tools/users-utils.js');
+let userUtils = require('./../../dev-tools/users-utils');
 let Connection = userUtils.Connection;
 let User = userUtils.User;
 
@@ -17,9 +17,64 @@ describe('Users features', function () {
 				assert.strictEqual(Users.get, Users);
 			});
 		});
+		describe('connections', function () {
+			it('should be a Map', function () {
+				assert.ok(Users.connections instanceof Map);
+			});
+		});
 		describe('users', function () {
 			it('should be a Map', function () {
 				assert.ok(Users.users instanceof Map);
+			});
+		});
+		describe('Connection', function () {
+			describe('#onDisconnect', function () {
+				beforeEach(function () {
+					this.connection = new Connection('127.0.0.1');
+					this.connection.user = new User(this.connection);
+					this.connection.user.name = 'Morfent';
+					this.connection.user.userid = 'morfent';
+				});
+
+				afterEach(function () {
+					this.connection.destroy();
+				});
+
+				it('should remove the connection from Users.connections', function () {
+					let connectionid = Users.connections.id;
+					this.connection.destroy();
+					assert.strictEqual(Users.connections.has(connectionid), false);
+				});
+
+				it('should destroy any user on the connection as well', function () {
+					let userid = this.connection.user.userid;
+					this.connection.destroy();
+					assert.strictEqual(Users.users.has(userid), false);
+				});
+			});
+
+			describe('#joinRoom', function () {
+				beforeEach(function () {
+					this.connection = new Connection('127.0.0.1');
+				});
+
+				afterEach(function () {
+					this.connection.destroy();
+				});
+
+				it('should join a room if not already present', function () {
+					this.connection.joinRoom(Rooms.lobby);
+					assert.ok(this.connection.inRooms.has('lobby'));
+				});
+			});
+
+			describe('#leaveRoom', function () {
+				it('should leave a room that is present', function () {
+					this.connection = new Connection('127.0.0.1');
+					this.connection.joinRoom(Rooms.lobby);
+					this.connection.leaveRoom(Rooms.lobby);
+					assert.ok(!this.connection.inRooms.has('lobby'));
+				});
 			});
 		});
 		describe('User', function () {
@@ -70,20 +125,20 @@ describe('Users features', function () {
 
 				it('should disconnect every user at that IP', function () {
 					let users = ['127.0.0.1', '127.0.0.1'].map(ip => new User(new Connection(ip)));
-					users[0].ban();
+					Punishments.ban(users[0]);
 					assert.strictEqual(users[0].connected, false);
 					assert.strictEqual(users[1].connected, false);
 				});
 
 				it('should not disconnect users at other IPs', function () {
 					let users = ['127.0.0.1', '127.0.0.2'].map(ip => new User(new Connection(ip)));
-					users[0].ban();
+					Punishments.ban(users[0]);
 					assert.strictEqual(users[1].connected, true);
 				});
 
 				it('should update IP count properly', function () {
 					let user = new User();
-					user.ban();
+					Punishments.ban(user);
 					for (let ip in user.ips) {
 						assert.strictEqual(user.ips[ip], 0);
 					}

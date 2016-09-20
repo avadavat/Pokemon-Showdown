@@ -186,17 +186,9 @@ exports.BattleScripts = {
 				didSomething = true;
 			}
 			if (moveData.status) {
-				if (!target.status) {
-					hitResult = target.setStatus(moveData.status, pokemon, move);
-					didSomething = didSomething || hitResult;
-				} else if (!isSecondary) {
-					if (target.status === moveData.status) {
-						this.add('-fail', target, target.status);
-					} else {
-						this.add('-fail', target);
-					}
-					return false;
-				}
+				hitResult = target.trySetStatus(moveData.status, pokemon, move);
+				if (!hitResult && move.status) return hitResult;
+				didSomething = didSomething || hitResult;
 			}
 			if (moveData.forceStatus) {
 				hitResult = target.setStatus(moveData.forceStatus, pokemon, move);
@@ -274,7 +266,7 @@ exports.BattleScripts = {
 		if (target && target.hp > 0 && pokemon.hp > 0 && moveData.forceSwitch && this.canSwitch(target.side)) {
 			hitResult = this.runEvent('DragOut', target, pokemon, move);
 			if (hitResult) {
-				target.forceSwitchFlag = true;
+				this.dragIn(target.side, target.position);
 			} else if (hitResult === false) {
 				this.add('-fail', target);
 			}
@@ -292,6 +284,7 @@ exports.BattleScripts = {
 				basePower: move,
 				type: '???',
 				category: 'Physical',
+				willCrit: false,
 				flags: {},
 			};
 		}
@@ -839,7 +832,7 @@ exports.BattleScripts = {
 			item: item,
 			level: level,
 			shiny: false,
-			gender: 'M',
+			gender: template.gender ? template.gender : 'M',
 		};
 	},
 };

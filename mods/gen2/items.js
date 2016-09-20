@@ -1,6 +1,10 @@
 'use strict';
 
 exports.BattleItems = {
+	berryjuice: {
+		inherit: true,
+		isUnreleased: false,
+	},
 	dragonfang: {
 		inherit: true,
 		onBasePower: function () {},
@@ -20,17 +24,19 @@ exports.BattleItems = {
 	},
 	luckypunch: {
 		inherit: true,
-		onModifyMove: function (move, user) {
+		onModifyCritRatioPriority: -1,
+		onModifyCritRatio: function (critRatio, user) {
 			if (user.template.species === 'Chansey') {
-				move.critRatio = 3;
+				return 3;
 			}
 		},
 	},
 	stick: {
 		inherit: true,
-		onModifyMove: function (move, user) {
+		onModifyCritRatioPriority: -1,
+		onModifyCritRatio: function (critRatio, user) {
 			if (user.template.species === 'Farfetch\'d') {
-				move.critRatio = 3;
+				return 3;
 			}
 		},
 	},

@@ -1,6 +1,6 @@
 'use strict';
 
-const REPL_ENABLED = false;
+const REPL_ENABLED = true;
 
 const fs = require('fs');
 const path = require('path');
@@ -61,9 +61,9 @@ exports.start = function (prefix, suffix, evalFunction) {
 			output: socket,
 			eval: (cmd, context, filename, callback) => {
 				try {
-					callback(null, evalFunction(cmd));
+					return callback(null, evalFunction(cmd));
 				} catch (e) {
-					callback(e);
+					return callback(e);
 				}
 			},
 		}).on('exit', () => socket.end());
@@ -75,7 +75,7 @@ exports.start = function (prefix, suffix, evalFunction) {
 		if (e.code === "EADDRINUSE") {
 			fs.unlink(name, e => {
 				if (e && e.code !== "ENOENT") {
-					require('./crashlogger.js')(e, 'REPL: ' + name);
+					require('./crashlogger')(e, 'REPL: ' + name);
 					return;
 				}
 
@@ -84,6 +84,6 @@ exports.start = function (prefix, suffix, evalFunction) {
 			return;
 		}
 
-		require('./crashlogger.js')(e, 'REPL: ' + name);
+		require('./crashlogger')(e, 'REPL: ' + name);
 	});
 };

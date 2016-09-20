@@ -104,7 +104,7 @@ exports.BattleItems = {
 				pokemon.eatItem();
 			}
 		},
-		onEatItem: function (item, pokemon) {
+		onTryEatItem: function (item, pokemon) {
 			if (!this.runEvent('TryHeal', pokemon)) return false;
 		},
 		onEat: function (pokemon) {
@@ -160,7 +160,7 @@ exports.BattleItems = {
 			if (item.megaEvolves === source.baseTemplate.baseSpecies) return false;
 			return true;
 		},
-		num: -6,
+		num: 679,
 		gen: 6,
 		desc: "If holder is an Alakazam, this item allows it to Mega Evolve in battle.",
 	},
@@ -188,7 +188,7 @@ exports.BattleItems = {
 			if (item.megaEvolves === source.baseTemplate.baseSpecies) return false;
 			return true;
 		},
-		num: -6,
+		num: 658,
 		gen: 6,
 		desc: "If holder is an Ampharos, this item allows it to Mega Evolve in battle.",
 	},
@@ -266,7 +266,7 @@ exports.BattleItems = {
 				}
 			}
 		},
-		num: -6,
+		num: 640,
 		gen: 6,
 		desc: "Holder's Sp. Def is 1.5x, but it can only select damaging moves.",
 	},
@@ -294,9 +294,10 @@ exports.BattleItems = {
 			type: "Steel",
 		},
 		onSourceModifyDamage: function (damage, source, target, move) {
-			if (move.type === 'Steel' && move.typeMod > 0 && !target.volatiles['substitute']) {
+			if (move.type === 'Steel' && move.typeMod > 0 && (!target.volatiles['substitute'] || move.flags['authentic'] || (move.infiltrates && this.gen >= 6))) {
 				if (target.eatItem()) {
 					this.debug('-50% reduction');
+					this.add('-enditem', target, this.effect, '[weaken]');
 					return this.chainModify(0.5);
 				}
 			}
@@ -343,6 +344,7 @@ exports.BattleItems = {
 			basePower: 100,
 			type: "Electric",
 		},
+		onEat: false,
 		num: 183,
 		gen: 3,
 		desc: "Cannot be eaten by the holder. No effect when eaten with Bug Bite or Pluck.",
@@ -459,7 +461,7 @@ exports.BattleItems = {
 			if (item.megaEvolves === source.baseTemplate.baseSpecies) return false;
 			return true;
 		},
-		num: -6,
+		num: 661,
 		gen: 6,
 		desc: "If holder is a Blastoise, this item allows it to Mega Evolve in battle.",
 	},
@@ -491,8 +493,13 @@ exports.BattleItems = {
 			pokemon.formeChange(template);
 			pokemon.baseTemplate = template;
 			pokemon.details = template.species + (pokemon.level === 100 ? '' : ', L' + pokemon.level) + (pokemon.gender === '' ? '' : ', ' + pokemon.gender) + (pokemon.set.shiny ? ', shiny' : '');
-			this.add('detailschange', pokemon, pokemon.details);
-			this.add('-primal', pokemon);
+			if (pokemon.illusion) {
+				pokemon.ability = ''; // Don't allow Illusion to wear off
+				this.add('-primal', pokemon.illusion);
+			} else {
+				this.add('detailschange', pokemon, pokemon.details);
+				this.add('-primal', pokemon);
+			}
 			pokemon.setAbility(template.abilities['0']);
 			pokemon.baseAbility = pokemon.ability;
 		},
@@ -500,7 +507,7 @@ exports.BattleItems = {
 			if (source.baseTemplate.baseSpecies === 'Kyogre') return false;
 			return true;
 		},
-		num: -6,
+		num: 535,
 		gen: 6,
 		desc: "If holder is a Kyogre, this item triggers its Primal Reversion in battle.",
 	},
@@ -513,6 +520,7 @@ exports.BattleItems = {
 			basePower: 90,
 			type: "Fire",
 		},
+		onEat: false,
 		num: 165,
 		gen: 3,
 		desc: "Cannot be eaten by the holder. No effect when eaten with Bug Bite or Pluck.",
@@ -653,9 +661,10 @@ exports.BattleItems = {
 			type: "Rock",
 		},
 		onSourceModifyDamage: function (damage, source, target, move) {
-			if (move.type === 'Rock' && move.typeMod > 0 && !target.volatiles['substitute']) {
+			if (move.type === 'Rock' && move.typeMod > 0 && (!target.volatiles['substitute'] || move.flags['authentic'] || (move.infiltrates && this.gen >= 6))) {
 				if (target.eatItem()) {
 					this.debug('-50% reduction');
+					this.add('-enditem', target, this.effect, '[weaken]');
 					return this.chainModify(0.5);
 				}
 			}
@@ -729,9 +738,10 @@ exports.BattleItems = {
 			type: "Normal",
 		},
 		onSourceModifyDamage: function (damage, source, target, move) {
-			if (move.type === 'Normal' && !target.volatiles['substitute']) {
+			if (move.type === 'Normal' && (!target.volatiles['substitute'] || move.flags['authentic'] || (move.infiltrates && this.gen >= 6))) {
 				if (target.eatItem()) {
 					this.debug('-50% reduction');
+					this.add('-enditem', target, this.effect, '[weaken]');
 					return this.chainModify(0.5);
 				}
 			}
@@ -841,9 +851,10 @@ exports.BattleItems = {
 			type: "Fighting",
 		},
 		onSourceModifyDamage: function (damage, source, target, move) {
-			if (move.type === 'Fighting' && move.typeMod > 0 && !target.volatiles['substitute']) {
+			if (move.type === 'Fighting' && move.typeMod > 0 && (!target.volatiles['substitute'] || move.flags['authentic'] || (move.infiltrates && this.gen >= 6))) {
 				if (target.eatItem()) {
 					this.debug('-50% reduction');
+					this.add('-enditem', target, this.effect, '[weaken]');
 					return this.chainModify(0.5);
 				}
 			}
@@ -874,9 +885,10 @@ exports.BattleItems = {
 			type: "Flying",
 		},
 		onSourceModifyDamage: function (damage, source, target, move) {
-			if (move.type === 'Flying' && move.typeMod > 0 && !target.volatiles['substitute']) {
+			if (move.type === 'Flying' && move.typeMod > 0 && (!target.volatiles['substitute'] || move.flags['authentic'] || (move.infiltrates && this.gen >= 6))) {
 				if (target.eatItem()) {
 					this.debug('-50% reduction');
+					this.add('-enditem', target, this.effect, '[weaken]');
 					return this.chainModify(0.5);
 				}
 			}
@@ -896,9 +908,10 @@ exports.BattleItems = {
 			type: "Dark",
 		},
 		onSourceModifyDamage: function (damage, source, target, move) {
-			if (move.type === 'Dark' && move.typeMod > 0 && !target.volatiles['substitute']) {
+			if (move.type === 'Dark' && move.typeMod > 0 && (!target.volatiles['substitute'] || move.flags['authentic'] || (move.infiltrates && this.gen >= 6))) {
 				if (target.eatItem()) {
 					this.debug('-50% reduction');
+					this.add('-enditem', target, this.effect, '[weaken]');
 					return this.chainModify(0.5);
 				}
 			}
@@ -917,6 +930,7 @@ exports.BattleItems = {
 			basePower: 90,
 			type: "Bug",
 		},
+		onEat: false,
 		num: 175,
 		gen: 3,
 		desc: "Cannot be eaten by the holder. No effect when eaten with Bug Bite or Pluck.",
@@ -941,15 +955,17 @@ exports.BattleItems = {
 			basePower: 100,
 			type: "Ghost",
 		},
+		onModifyPriorityPriority: -1,
 		onModifyPriority: function (priority, pokemon) {
 			if (pokemon.hp <= pokemon.maxhp / 4 || (pokemon.hp <= pokemon.maxhp / 2 && pokemon.hasAbility('gluttony'))) {
 				if (pokemon.eatItem()) {
-					this.add('-activate', pokemon, 'Custap Berry');
+					this.add('-activate', pokemon, 'item: Custap Berry');
 					pokemon.removeVolatile('custapberry');
-					return priority + 0.1;
+					return Math.round(priority) + 0.1;
 				}
 			}
 		},
+		onEat: function () { },
 		num: 210,
 		gen: 4,
 		desc: "Holder moves first in its priority bracket when at 1/4 max HP or less. Single use.",
@@ -1181,6 +1197,7 @@ exports.BattleItems = {
 			basePower: 100,
 			type: "Water",
 		},
+		onEat: false,
 		num: 182,
 		gen: 3,
 		desc: "Cannot be eaten by the holder. No effect when eaten with Bug Bite or Pluck.",
@@ -1233,7 +1250,7 @@ exports.BattleItems = {
 		},
 		num: 547,
 		gen: 5,
-		desc: "If holder is hit, it immediately switches out with a chosen ally. Single use.",
+		desc: "If holder survives a hit, it immediately switches out to a chosen ally. Single use.",
 	},
 	"electirizer": {
 		id: "electirizer",
@@ -1287,15 +1304,15 @@ exports.BattleItems = {
 		},
 		onHit: function (target, source, move) {
 			if (move && move.typeMod > 0) {
-				target.eatItem();
+				if (target.eatItem()) {
+					this.heal(target.maxhp / 4);
+				}
 			}
 		},
-		onEatItem: function (item, pokemon) {
+		onTryEatItem: function (item, pokemon) {
 			if (!this.runEvent('TryHeal', pokemon)) return false;
 		},
-		onEat: function (pokemon) {
-			this.heal(pokemon.maxhp / 4);
-		},
+		onEat: function () { },
 		num: 208,
 		gen: 3,
 		desc: "Restores 1/4 max HP after holder is hit by a supereffective move. Single use.",
@@ -1354,7 +1371,7 @@ exports.BattleItems = {
 				}
 			}
 		},
-		num: -6,
+		num: 715,
 		gen: 6,
 		desc: "Holder's first successful Fairy-type attack will have 1.3x power. Single use.",
 	},
@@ -1399,7 +1416,7 @@ exports.BattleItems = {
 				pokemon.eatItem();
 			}
 		},
-		onEatItem: function (item, pokemon) {
+		onTryEatItem: function (item, pokemon) {
 			if (!this.runEvent('TryHeal', pokemon)) return false;
 		},
 		onEat: function (pokemon) {
@@ -1576,9 +1593,7 @@ exports.BattleItems = {
 			basePower: 10,
 		},
 		onModifyPriority: function (priority, pokemon) {
-			if (!pokemon.hasAbility('stall')) {
-				return priority - 0.1;
-			}
+			return Math.round(priority) - 0.1;
 		},
 		num: 316,
 		gen: 4,
@@ -1730,6 +1745,7 @@ exports.BattleItems = {
 			basePower: 90,
 			type: "Flying",
 		},
+		onEat: false,
 		num: 173,
 		gen: 3,
 		desc: "Cannot be eaten by the holder. No effect when eaten with Bug Bite or Pluck.",
@@ -1813,9 +1829,10 @@ exports.BattleItems = {
 			type: "Dragon",
 		},
 		onSourceModifyDamage: function (damage, source, target, move) {
-			if (move.type === 'Dragon' && move.typeMod > 0 && !target.volatiles['substitute']) {
+			if (move.type === 'Dragon' && move.typeMod > 0 && (!target.volatiles['substitute'] || move.flags['authentic'] || (move.infiltrates && this.gen >= 6))) {
 				if (target.eatItem()) {
 					this.debug('-50% reduction');
+					this.add('-enditem', target, this.effect, '[weaken]');
 					return this.chainModify(0.5);
 				}
 			}
@@ -1903,6 +1920,7 @@ exports.BattleItems = {
 			basePower: 90,
 			type: "Ground",
 		},
+		onEat: false,
 		num: 172,
 		gen: 3,
 		desc: "Cannot be eaten by the holder. No effect when eaten with Bug Bite or Pluck.",
@@ -1935,7 +1953,7 @@ exports.BattleItems = {
 				pokemon.eatItem();
 			}
 		},
-		onEatItem: function (item, pokemon) {
+		onTryEatItem: function (item, pokemon) {
 			if (!this.runEvent('TryHeal', pokemon)) return false;
 		},
 		onEat: function (pokemon) {
@@ -2094,9 +2112,10 @@ exports.BattleItems = {
 			type: "Ghost",
 		},
 		onSourceModifyDamage: function (damage, source, target, move) {
-			if (move.type === 'Ghost' && move.typeMod > 0 && !target.volatiles['substitute']) {
+			if (move.type === 'Ghost' && move.typeMod > 0 && (!target.volatiles['substitute'] || move.flags['authentic'] || (move.infiltrates && this.gen >= 6))) {
 				if (target.eatItem()) {
 					this.debug('-50% reduction');
+					this.add('-enditem', target, this.effect, '[weaken]');
 					return this.chainModify(0.5);
 				}
 			}
@@ -2116,9 +2135,10 @@ exports.BattleItems = {
 			type: "Poison",
 		},
 		onSourceModifyDamage: function (damage, source, target, move) {
-			if (move.type === 'Poison' && move.typeMod > 0 && !target.volatiles['substitute']) {
+			if (move.type === 'Poison' && move.typeMod > 0 && (!target.volatiles['substitute'] || move.flags['authentic'] || (move.infiltrates && this.gen >= 6))) {
 				if (target.eatItem()) {
 					this.debug('-50% reduction');
+					this.add('-enditem', target, this.effect, '[weaken]');
 					return this.chainModify(0.5);
 				}
 			}
@@ -2145,7 +2165,7 @@ exports.BattleItems = {
 		onEat: function (pokemon) {
 			this.boost({def: 1});
 		},
-		num: -6,
+		num: 687,
 		gen: 6,
 		desc: "Raises holder's Defense by 1 stage after it is hit by a physical attack. Single use.",
 	},
@@ -2158,6 +2178,7 @@ exports.BattleItems = {
 			basePower: 90,
 			type: "Fighting",
 		},
+		onEat: false,
 		num: 170,
 		gen: 3,
 		desc: "Cannot be eaten by the holder. No effect when eaten with Bug Bite or Pluck.",
@@ -2209,9 +2230,7 @@ exports.BattleItems = {
 			basePower: 10,
 		},
 		onModifyPriority: function (priority, pokemon) {
-			if (!pokemon.hasAbility('stall')) {
-				return priority - 0.1;
-			}
+			return Math.round(priority) - 0.1;
 		},
 		num: 279,
 		gen: 4,
@@ -2248,7 +2267,7 @@ exports.BattleItems = {
 			if (item.megaEvolves === source.baseTemplate.baseSpecies) return false;
 			return true;
 		},
-		num: -6,
+		num: 684,
 		gen: 6,
 		desc: "If holder is a Latias, this item allows it to Mega Evolve in battle.",
 	},
@@ -2262,7 +2281,7 @@ exports.BattleItems = {
 			if (item.megaEvolves === source.baseTemplate.baseSpecies) return false;
 			return true;
 		},
-		num: -6,
+		num: 685,
 		gen: 6,
 		desc: "If holder is a Latios, this item allows it to Mega Evolve in battle.",
 	},
@@ -2335,8 +2354,8 @@ exports.BattleItems = {
 			if (pokemon.item !== 'leppaberry') {
 				let foeActive = pokemon.side.foe.active;
 				let foeIsStale = false;
-				for (let i = 0; i < 1; i++) {
-					if (foeActive.isStale >= 2) {
+				for (let i = 0; i < foeActive.length; i++) {
+					if (foeActive[i].hp && foeActive[i].isStale >= 2) {
 						foeIsStale = true;
 						break;
 					}
@@ -2477,9 +2496,9 @@ exports.BattleItems = {
 		fling: {
 			basePower: 40,
 		},
-		onModifyMove: function (move, user) {
+		onModifyCritRatio: function (critRatio, user) {
 			if (user.baseTemplate.species === 'Chansey') {
-				move.critRatio += 2;
+				return critRatio + 2;
 			}
 		},
 		num: 256,
@@ -2520,7 +2539,7 @@ exports.BattleItems = {
 				this.boost({spd: 1});
 			}
 		},
-		num: -6,
+		num: 648,
 		gen: 6,
 		desc: "Raises holder's Sp. Def by 1 stage if hit by a Water-type attack. Single use.",
 	},
@@ -2602,7 +2621,7 @@ exports.BattleItems = {
 				pokemon.eatItem();
 			}
 		},
-		onEatItem: function (item, pokemon) {
+		onTryEatItem: function (item, pokemon) {
 			if (!this.runEvent('TryHeal', pokemon)) return false;
 		},
 		onEat: function (pokemon) {
@@ -2624,6 +2643,7 @@ exports.BattleItems = {
 			basePower: 90,
 			type: "Rock",
 		},
+		onEat: false,
 		num: 176,
 		gen: 3,
 		desc: "Cannot be eaten by the holder. No effect when eaten with Bug Bite or Pluck.",
@@ -2671,7 +2691,7 @@ exports.BattleItems = {
 		onEat: function (pokemon) {
 			this.boost({spd: 1});
 		},
-		num: -6,
+		num: 688,
 		gen: 6,
 		desc: "Raises holder's Sp. Def by 1 stage after it is hit by a special attack. Single use.",
 	},
@@ -3007,6 +3027,7 @@ exports.BattleItems = {
 			basePower: 90,
 			type: "Water",
 		},
+		onEat: false,
 		num: 166,
 		gen: 3,
 		desc: "Cannot be eaten by the holder. No effect when eaten with Bug Bite or Pluck.",
@@ -3053,6 +3074,7 @@ exports.BattleItems = {
 			basePower: 90,
 			type: "Dragon",
 		},
+		onEat: false,
 		num: 178,
 		gen: 3,
 		desc: "Cannot be eaten by the holder. No effect when eaten with Bug Bite or Pluck.",
@@ -3085,9 +3107,10 @@ exports.BattleItems = {
 			type: "Fire",
 		},
 		onSourceModifyDamage: function (damage, source, target, move) {
-			if (move.type === 'Fire' && move.typeMod > 0 && !target.volatiles['substitute']) {
+			if (move.type === 'Fire' && move.typeMod > 0 && (!target.volatiles['substitute'] || move.flags['authentic'] || (move.infiltrates && this.gen >= 6))) {
 				if (target.eatItem()) {
 					this.debug('-50% reduction');
+					this.add('-enditem', target, this.effect, '[weaken]');
 					return this.chainModify(0.5);
 				}
 			}
@@ -3139,7 +3162,7 @@ exports.BattleItems = {
 				pokemon.eatItem();
 			}
 		},
-		onEatItem: function (item, pokemon) {
+		onTryEatItem: function (item, pokemon) {
 			if (!this.runEvent('TryHeal', pokemon)) return false;
 		},
 		onEat: function (pokemon) {
@@ -3158,6 +3181,7 @@ exports.BattleItems = {
 			basePower: 90,
 			type: "Steel",
 		},
+		onEat: false,
 		num: 180,
 		gen: 3,
 		desc: "Cannot be eaten by the holder. No effect when eaten with Bug Bite or Pluck.",
@@ -3167,7 +3191,7 @@ exports.BattleItems = {
 		name: "Park Ball",
 		spritenum: 325,
 		num: 500,
-		gen: 2,
+		gen: 4,
 		desc: "A special Poke Ball for the Pal Park.",
 	},
 	"passhoberry": {
@@ -3180,9 +3204,10 @@ exports.BattleItems = {
 			type: "Water",
 		},
 		onSourceModifyDamage: function (damage, source, target, move) {
-			if (move.type === 'Water' && move.typeMod > 0 && !target.volatiles['substitute']) {
+			if (move.type === 'Water' && move.typeMod > 0 && (!target.volatiles['substitute'] || move.flags['authentic'] || (move.infiltrates && this.gen >= 6))) {
 				if (target.eatItem()) {
 					this.debug('-50% reduction');
+					this.add('-enditem', target, this.effect, '[weaken]');
 					return this.chainModify(0.5);
 				}
 			}
@@ -3202,9 +3227,10 @@ exports.BattleItems = {
 			type: "Psychic",
 		},
 		onSourceModifyDamage: function (damage, source, target, move) {
-			if (move.type === 'Psychic' && move.typeMod > 0 && !target.volatiles['substitute']) {
+			if (move.type === 'Psychic' && move.typeMod > 0 && (!target.volatiles['substitute'] || move.flags['authentic'] || (move.infiltrates && this.gen >= 6))) {
 				if (target.eatItem()) {
 					this.debug('-50% reduction');
+					this.add('-enditem', target, this.effect, '[weaken]');
 					return this.chainModify(0.5);
 				}
 			}
@@ -3302,6 +3328,7 @@ exports.BattleItems = {
 			basePower: 90,
 			type: "Grass",
 		},
+		onEat: false,
 		num: 168,
 		gen: 3,
 		desc: "Cannot be eaten by the holder. No effect when eaten with Bug Bite or Pluck.",
@@ -3338,7 +3365,7 @@ exports.BattleItems = {
 			return true;
 		},
 		forcedForme: "Arceus-Fairy",
-		num: -6,
+		num: 644,
 		gen: 6,
 		desc: "Holder's Fairy-type attacks have 1.2x power. Judgment is Fairy type.",
 	},
@@ -3407,6 +3434,7 @@ exports.BattleItems = {
 			basePower: 90,
 			type: "Ice",
 		},
+		onEat: false,
 		num: 169,
 		gen: 3,
 		desc: "Cannot be eaten by the holder. No effect when eaten with Bug Bite or Pluck.",
@@ -3464,6 +3492,7 @@ exports.BattleItems = {
 			basePower: 90,
 			type: "Poison",
 		},
+		onEat: false,
 		num: 171,
 		gen: 3,
 		desc: "Cannot be eaten by the holder. No effect when eaten with Bug Bite or Pluck.",
@@ -3478,10 +3507,11 @@ exports.BattleItems = {
 	},
 	"quickclaw": {
 		id: "quickclaw",
+		onModifyPriorityPriority: -1,
 		onModifyPriority: function (priority, pokemon) {
 			if (this.random(5) === 0) {
 				this.add('-activate', pokemon, 'item: Quick Claw');
-				return priority + 0.1;
+				return Math.round(priority) + 0.1;
 			}
 		},
 		name: "Quick Claw",
@@ -3518,6 +3548,7 @@ exports.BattleItems = {
 			basePower: 90,
 			type: "Ghost",
 		},
+		onEat: false,
 		num: 177,
 		gen: 3,
 		desc: "Cannot be eaten by the holder. No effect when eaten with Bug Bite or Pluck.",
@@ -3563,8 +3594,8 @@ exports.BattleItems = {
 		fling: {
 			basePower: 80,
 		},
-		onModifyMove: function (move) {
-			move.critRatio++;
+		onModifyCritRatio: function (critRatio) {
+			return critRatio + 1;
 		},
 		num: 326,
 		gen: 4,
@@ -3604,6 +3635,7 @@ exports.BattleItems = {
 			basePower: 80,
 			type: "Steel",
 		},
+		onEat: false,
 		num: 164,
 		gen: 3,
 		desc: "Cannot be eaten by the holder. No effect when eaten with Bug Bite or Pluck.",
@@ -3617,17 +3649,17 @@ exports.BattleItems = {
 		},
 		onAfterMoveSecondary: function (target, source, move) {
 			if (source && source !== target && source.hp && target.hp && move && move.category !== 'Status') {
-				if (!source.isActive || !this.canSwitch(source.side) || target.forceSwitchFlag) return;
+				if (!source.isActive || !this.canSwitch(source.side) || source.forceSwitchFlag || target.forceSwitchFlag) return;
 				if (target.useItem(null, source)) { // This order is correct - the item is used up even against a pokemon with Ingrain or that otherwise can't be forced out
 					if (this.runEvent('DragOut', source, target, move)) {
-						this.dragIn(source.side, source.position);
+						source.forceSwitchFlag = true;
 					}
 				}
 			}
 		},
 		num: 542,
 		gen: 5,
-		desc: "If holder is hit, it forces the attacker to switch to a random ally. Single use.",
+		desc: "If holder survives a hit, attacker is forced to switch to a random ally. Single use.",
 	},
 	"redorb": {
 		id: "redorb",
@@ -3643,8 +3675,13 @@ exports.BattleItems = {
 			pokemon.formeChange(template);
 			pokemon.baseTemplate = template;
 			pokemon.details = template.species + (pokemon.level === 100 ? '' : ', L' + pokemon.level) + (pokemon.gender === '' ? '' : ', ' + pokemon.gender) + (pokemon.set.shiny ? ', shiny' : '');
-			this.add('detailschange', pokemon, pokemon.details);
-			this.add('-primal', pokemon);
+			if (pokemon.illusion) {
+				pokemon.ability = ''; // Don't allow Illusion to wear off
+				this.add('-primal', pokemon.illusion);
+			} else {
+				this.add('detailschange', pokemon, pokemon.details);
+				this.add('-primal', pokemon);
+			}
 			pokemon.setAbility(template.abilities['0']);
 			pokemon.baseAbility = pokemon.ability;
 		},
@@ -3652,7 +3689,7 @@ exports.BattleItems = {
 			if (source.baseTemplate.baseSpecies === 'Groudon') return false;
 			return true;
 		},
-		num: -6,
+		num: 534,
 		gen: 6,
 		desc: "If holder is a Groudon, this item triggers its Primal Reversion in battle.",
 	},
@@ -3674,9 +3711,10 @@ exports.BattleItems = {
 			type: "Grass",
 		},
 		onSourceModifyDamage: function (damage, source, target, move) {
-			if (move.type === 'Grass' && move.typeMod > 0 && !target.volatiles['substitute']) {
+			if (move.type === 'Grass' && move.typeMod > 0 && (!target.volatiles['substitute'] || move.flags['authentic'] || (move.infiltrates && this.gen >= 6))) {
 				if (target.eatItem()) {
 					this.debug('-50% reduction');
+					this.add('-enditem', target, this.effect, '[weaken]');
 					return this.chainModify(0.5);
 				}
 			}
@@ -3789,15 +3827,16 @@ exports.BattleItems = {
 			type: "Fairy",
 		},
 		onSourceModifyDamage: function (damage, source, target, move) {
-			if (move.type === 'Fairy' && move.typeMod > 0 && !target.volatiles['substitute']) {
+			if (move.type === 'Fairy' && move.typeMod > 0 && (!target.volatiles['substitute'] || move.flags['authentic'] || (move.infiltrates && this.gen >= 6))) {
 				if (target.eatItem()) {
 					this.debug('-50% reduction');
+					this.add('-enditem', target, this.effect, '[weaken]');
 					return this.chainModify(0.5);
 				}
 			}
 		},
 		onEat: function () { },
-		num: -6,
+		num: 686,
 		gen: 6,
 		desc: "Halves damage taken from a supereffective Fairy-type attack. Single use.",
 	},
@@ -3855,12 +3894,12 @@ exports.BattleItems = {
 			if (type === 'sandstorm' || type === 'hail' || type === 'powder') return false;
 		},
 		onTryHit: function (pokemon, source, move) {
-			if (move.flags['powder'] && move.id !== 'ragepowder') {
-				this.add('-activate', pokemon, 'Safety Goggles', move.name);
+			if (move.flags['powder'] && pokemon !== source) {
+				this.add('-activate', pokemon, 'item: Safety Goggles', move.name);
 				return null;
 			}
 		},
-		num: -6,
+		num: 650,
 		gen: 6,
 		desc: "Holder is immune to powder moves and damage from Sandstorm or Hail.",
 	},
@@ -3934,8 +3973,8 @@ exports.BattleItems = {
 		fling: {
 			basePower: 30,
 		},
-		onModifyMove: function (move) {
-			move.critRatio++;
+		onModifyCritRatio: function (critRatio) {
+			return critRatio + 1;
 		},
 		num: 232,
 		gen: 2,
@@ -4047,9 +4086,10 @@ exports.BattleItems = {
 			type: "Ground",
 		},
 		onSourceModifyDamage: function (damage, source, target, move) {
-			if (move.type === 'Ground' && move.typeMod > 0 && !target.volatiles['substitute']) {
+			if (move.type === 'Ground' && move.typeMod > 0 && (!target.volatiles['substitute'] || move.flags['authentic'] || (move.infiltrates && this.gen >= 6))) {
 				if (target.eatItem()) {
 					this.debug('-50% reduction');
+					this.add('-enditem', target, this.effect, '[weaken]');
 					return this.chainModify(0.5);
 				}
 			}
@@ -4107,7 +4147,7 @@ exports.BattleItems = {
 				pokemon.eatItem();
 			}
 		},
-		onEatItem: function (item, pokemon) {
+		onTryEatItem: function (item, pokemon) {
 			if (!this.runEvent('TryHeal', pokemon)) return false;
 		},
 		onEat: function (pokemon) {
@@ -4187,7 +4227,7 @@ exports.BattleItems = {
 				this.boost({atk: 1});
 			}
 		},
-		num: -6,
+		num: 649,
 		gen: 6,
 		desc: "Raises holder's Attack by 1 if hit by an Ice-type attack. Single use.",
 	},
@@ -4257,6 +4297,7 @@ exports.BattleItems = {
 			basePower: 90,
 			type: "Dark",
 		},
+		onEat: false,
 		num: 179,
 		gen: 3,
 		desc: "Cannot be eaten by the holder. No effect when eaten with Bug Bite or Pluck.",
@@ -4310,7 +4351,7 @@ exports.BattleItems = {
 		name: "Sport Ball",
 		spritenum: 465,
 		num: 499,
-		gen: 4,
+		gen: 2,
 		desc: "A special Poke Ball for the Bug-Catching Contest.",
 	},
 	"starfberry": {
@@ -4385,9 +4426,9 @@ exports.BattleItems = {
 			basePower: 60,
 		},
 		spritenum: 475,
-		onModifyMove: function (move, user) {
+		onModifyCritRatio: function (critRatio, user) {
 			if (user.baseTemplate.species === 'Farfetch\'d') {
-				move.critRatio += 2;
+				return critRatio + 2;
 			}
 		},
 		num: 259,
@@ -4462,6 +4503,7 @@ exports.BattleItems = {
 			basePower: 90,
 			type: "Psychic",
 		},
+		onEat: false,
 		num: 174,
 		gen: 3,
 		desc: "Cannot be eaten by the holder. No effect when eaten with Bug Bite or Pluck.",
@@ -4476,9 +4518,10 @@ exports.BattleItems = {
 			type: "Bug",
 		},
 		onSourceModifyDamage: function (damage, source, target, move) {
-			if (move.type === 'Bug' && move.typeMod > 0 && !target.volatiles['substitute']) {
+			if (move.type === 'Bug' && move.typeMod > 0 && (!target.volatiles['substitute'] || move.flags['authentic'] || (move.infiltrates && this.gen >= 6))) {
 				if (target.eatItem()) {
 					this.debug('-50% reduction');
+					this.add('-enditem', target, this.effect, '[weaken]');
 					return this.chainModify(0.5);
 				}
 			}
@@ -4615,9 +4658,10 @@ exports.BattleItems = {
 			type: "Electric",
 		},
 		onSourceModifyDamage: function (damage, source, target, move) {
-			if (move.type === 'Electric' && move.typeMod > 0 && !target.volatiles['substitute']) {
+			if (move.type === 'Electric' && move.typeMod > 0 && (!target.volatiles['substitute'] || move.flags['authentic'] || (move.infiltrates && this.gen >= 6))) {
 				if (target.eatItem()) {
 					this.debug('-50% reduction');
+					this.add('-enditem', target, this.effect, '[weaken]');
 					return this.chainModify(0.5);
 				}
 			}
@@ -4655,6 +4699,7 @@ exports.BattleItems = {
 			basePower: 100,
 			type: "Fire",
 		},
+		onEat: false,
 		num: 181,
 		gen: 3,
 		desc: "Cannot be eaten by the holder. No effect when eaten with Bug Bite or Pluck.",
@@ -4688,7 +4733,7 @@ exports.BattleItems = {
 				this.boost({atk: 2, spa: 2});
 			}
 		},
-		num: -6,
+		num: 639,
 		gen: 6,
 		desc: "If holder is hit super effectively, raises Attack, Sp. Atk by 2 stages. Single use.",
 	},
@@ -4701,6 +4746,7 @@ exports.BattleItems = {
 			basePower: 90,
 			type: "Electric",
 		},
+		onEat: false,
 		num: 167,
 		gen: 3,
 		desc: "Cannot be eaten by the holder. No effect when eaten with Bug Bite or Pluck.",
@@ -4773,7 +4819,7 @@ exports.BattleItems = {
 				pokemon.eatItem();
 			}
 		},
-		onEatItem: function (item, pokemon) {
+		onTryEatItem: function (item, pokemon) {
 			if (!this.runEvent('TryHeal', pokemon)) return false;
 		},
 		onEat: function (pokemon) {
@@ -4813,9 +4859,10 @@ exports.BattleItems = {
 			type: "Ice",
 		},
 		onSourceModifyDamage: function (damage, source, target, move) {
-			if (move.type === 'Ice' && move.typeMod > 0 && !target.volatiles['substitute']) {
+			if (move.type === 'Ice' && move.typeMod > 0 && (!target.volatiles['substitute'] || move.flags['authentic'] || (move.infiltrates && this.gen >= 6))) {
 				if (target.eatItem()) {
 					this.debug('-50% reduction');
+					this.add('-enditem', target, this.effect, '[weaken]');
 					return this.chainModify(0.5);
 				}
 			}
@@ -4894,7 +4941,7 @@ exports.BattleItems = {
 				pokemon.eatItem();
 			}
 		},
-		onEatItem: function (item, pokemon) {
+		onTryEatItem: function (item, pokemon) {
 			if (!this.runEvent('TryHeal', pokemon)) return false;
 		},
 		onEat: function (pokemon) {
@@ -4979,7 +5026,7 @@ exports.BattleItems = {
 				pokemon.eatItem();
 			}
 		},
-		onEatItem: function (item, pokemon) {
+		onTryEatItem: function (item, pokemon) {
 			if (!this.runEvent('TryHeal', pokemon)) return false;
 		},
 		onEat: function (pokemon) {

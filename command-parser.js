@@ -39,38 +39,65 @@ const BROADCAST_TOKEN = '!';
 const fs = require('fs');
 const path = require('path');
 
+class PatternTester {
+	// This class sounds like a RegExp
+	// In fact, one could in theory implement it as a RegExp subclass
+	// However, ES2016 RegExp subclassing is a can of worms, and it wouldn't allow us
+	// to tailor the test method for fast command parsing.
+	constructor() {
+		this.elements = [];
+		this.fastElements = new Set();
+		this.regexp = null;
+	}
+	fastNormalize(elem) {
+		return elem.slice(0, -1);
+	}
+	update() {
+		const slowElements = this.elements.filter(elem => !this.fastElements.has(this.fastNormalize(elem)));
+		if (slowElements.length) {
+			this.regexp = new RegExp('^(' + slowElements.map(elem => '(?:' + elem + ')').join('|') + ')', 'i');
+		}
+	}
+	register(elem) {
+		if (Array.isArray(elem)) {
+			elem.forEach(e => this.register(e));
+			return;
+		}
+		this.elements.push(elem);
+		if (/^[^ \^\$\?\|\(\)\[\]]+ $/.test(elem)) {
+			this.fastElements.add(this.fastNormalize(elem));
+		}
+		this.update();
+	}
+	test(text) {
+		const spaceIndex = text.indexOf(' ');
+		if (this.fastElements.has(spaceIndex >= 0 ? text.slice(0, spaceIndex) : text)) {
+			return true;
+		}
+		if (!this.regexp) return false;
+		return this.regexp.test(text);
+	}
+}
+
+exports.multiLinePattern = new PatternTester();
+exports.globalPattern = new PatternTester();
+
 /*********************************************************
  * Load command files
  *********************************************************/
 
-let baseCommands = exports.baseCommands = require('./commands.js').commands;
+let baseCommands = exports.baseCommands = require('./commands').commands;
 let commands = exports.commands = Object.assign({}, baseCommands);
 
 // Install plug-in commands
 
 // info always goes first so other plugins can shadow it
-Object.assign(commands, require('./chat-plugins/info.js').commands);
+Object.assign(commands, require('./chat-plugins/info').commands);
 
 for (let file of fs.readdirSync(path.resolve(__dirname, 'chat-plugins'))) {
 	if (file.substr(-3) !== '.js' || file === 'info.js') continue;
 	Object.assign(commands, require('./chat-plugins/' + file).commands);
 }
-
-/*********************************************************
- * Modlog
- *********************************************************/
-
-let modlog = exports.modlog = {
-	lobby: fs.createWriteStream(path.resolve(__dirname, 'logs/modlog/modlog_lobby.txt'), {flags:'a+'}),
-	battle: fs.createWriteStream(path.resolve(__dirname, 'logs/modlog/modlog_battle.txt'), {flags:'a+'}),
-};
-
-let writeModlog = exports.writeModlog = function (roomid, text) {
-	if (!modlog[roomid]) {
-		modlog[roomid] = fs.createWriteStream(path.resolve(__dirname, 'logs/modlog/modlog_' + roomid + '.txt'), {flags:'a+'});
-	}
-	modlog[roomid].write('[' + (new Date().toJSON()) + '] ' + text + '\n');
-};
 
 /*********************************************************
  * Parser
@@ -91,64 +118,137 @@ class CommandContext {
 		this.user = options.user || null;
 		this.connection = options.connection || null;
 
-		this.targetUserName = '';
 		this.targetUser = null;
+		this.targetUsername = '';
+		this.inputUsername = '';
+
+		this.pmTarget = options.pmTarget;
+		this.relatedRoom = options.relatedRoom;
 	}
 
+	checkFormat(room, message) {
+		if (!room) return false;
+		if (!room.filterStretching && !room.filterCaps) return false;
+		let formatError = [];
+		// Removes extra spaces and null characters
+		message = message.trim().replace(/[ \u0000\u200B-\u200F]+/g, ' ');
+
+		let stretchMatch = room.filterStretching && message.match(/(.+?)\1{7,}/i);
+		let capsMatch = room.filterCaps && message.match(/[A-Z\s]{18,}/);
+
+		if (stretchMatch) {
+			formatError.push("too much stretching");
+		}
+		if (capsMatch) {
+			formatError.push("too many capital letters");
+		}
+		if (formatError.length > 0) {
+			return formatError.join(' and ') + ".";
+		}
+		return false;
+	}
+
+	checkSlowchat(room, user) {
+		if (!room || !room.slowchat) return true;
+		let lastActiveSeconds = (Date.now() - user.lastMessageTime) / 1000;
+		if (lastActiveSeconds < room.slowchat) return false;
+		return true;
+	}
+
+	checkBanwords(room, message) {
+		if (!room) return true;
+		if (!room.banwordRegex) {
+			if (room.banwords && room.banwords.length) {
+				room.banwordRegex = new RegExp('(?:\\b|(?!\\w))(?:' + room.banwords.join('|') + ')(?:\\b|\\B(?!\\w))', 'i');
+			} else {
+				room.banwordRegex = true;
+			}
+		}
+		if (!message) return true;
+		if (room.banwordRegex !== true && room.banwordRegex.test(message)) {
+			return false;
+		}
+		return true;
+	}
+	pmTransform(message) {
+		let prefix = `|pm|${this.user.getIdentity()}|${this.pmTarget.getIdentity ? this.pmTarget.getIdentity() : ' ' + this.pmTarget}|`;
+		return message.split('\n').map(message => {
+			if (message.startsWith('||')) {
+				return prefix + '/text ' + message.slice(2);
+			} else if (message.startsWith('|html|')) {
+				return prefix + '/raw ' + message.slice(6);
+			} else if (message.startsWith('|raw|')) {
+				return prefix + '/raw ' + message.slice(5);
+			} else if (message.startsWith('|c~|')) {
+				return prefix + message.slice(4);
+			} else if (message.startsWith('|c|~|/')) {
+				return prefix + message.slice(5);
+			}
+			return prefix + '/text ' + message;
+		}).join('\n');
+	}
 	sendReply(data) {
 		if (this.broadcasting) {
-			this.room.add(data);
+			// broadcasting
+			if (this.pmTarget) {
+				data = this.pmTransform(data);
+				this.user.send(data);
+				if (this.pmTarget.send) this.pmTarget.send(data);
+			} else {
+				this.room.add(data);
+			}
 		} else {
-			this.connection.sendTo(this.room, data);
+			// not broadcasting
+			if (this.pmTarget) {
+				data = this.pmTransform(data);
+				this.connection.send(data);
+			} else {
+				this.connection.sendTo(this.room, data);
+			}
 		}
 	}
 	errorReply(message) {
 		if (this.pmTarget) {
-			this.connection.send('|pm|' + this.user.getIdentity() + '|' + (this.pmTarget.getIdentity ? this.pmTarget.getIdentity() : ' ' + this.pmTarget) + '|/error ' + message);
+			let prefix = '|pm|' + this.user.getIdentity() + '|' + (this.pmTarget.getIdentity ? this.pmTarget.getIdentity() : ' ' + this.pmTarget) + '|/error ';
+			this.connection.send(prefix + message.replace(/\n/g, prefix));
 		} else {
-			this.sendReply('|html|<div class="message-error">' + Tools.escapeHTML(message) + '</div>');
+			this.sendReply('|html|<div class="message-error">' + Tools.escapeHTML(message).replace(/\n/g, '<br />') + '</div>');
 		}
 	}
+	addBox(html) {
+		this.add('|html|<div class="infobox">' + html + '</div>');
+	}
 	sendReplyBox(html) {
-		this.sendReply('|raw|<div class="infobox">' + html + '</div>');
+		this.sendReply('|html|<div class="infobox">' + html + '</div>');
 	}
 	popupReply(message) {
 		this.connection.popup(message);
 	}
 	add(data) {
+		if (this.pmTarget) {
+			data = this.pmTransform(data);
+			this.user.send(data);
+			if (this.pmTarget.send) this.pmTarget.send(data);
+			return;
+		}
 		this.room.add(data);
 	}
 	send(data) {
+		if (this.pmTarget) {
+			data = this.pmTransform(data);
+			this.user.send(data);
+			if (this.pmTarget.send) this.pmTarget.send(data);
+			return;
+		}
 		this.room.send(data);
 	}
-	privateModCommand(data, noLog) {
-		this.sendModCommand(data);
-		this.logEntry(data);
-		this.logModCommand(data);
-	}
 	sendModCommand(data) {
-		let users = this.room.users;
-		let auth = this.room.auth;
-
-		for (let i in users) {
-			let user = users[i];
-			// hardcoded for performance reasons (this is an inner loop)
-			if (user.isStaff || (auth && (auth[user.userid] || '+') !== '+')) {
-				user.sendTo(this.room, data);
-			}
-		}
+		this.room.sendModCommand(data);
 	}
-	logEntry(data) {
-		this.room.logEntry(data);
-	}
-	addModCommand(text, logOnlyText) {
-		this.add(text);
-		this.logModCommand(text + (logOnlyText || ""));
-	}
-	logModCommand(text) {
-		let roomid = (this.room.battle ? 'battle' : this.room.id);
-		if (this.room.isPersonal) roomid = 'groupchat';
-		writeModlog(roomid, '(' + this.room.id + ') ' + text);
+	privateModCommand(data) {
+		this.room.sendModCommand(data);
+		this.logEntry(data);
+		this.room.modlog(data);
 	}
 	globalModlog(action, user, text) {
 		let buf = "(" + this.room.id + ") " + action + ": ";
@@ -160,7 +260,18 @@ class CommandContext {
 			if (user.autoconfirmed && user.autoconfirmed !== userid) buf += " ac:[" + user.autoconfirmed + "]";
 		}
 		buf += text;
-		writeModlog('global', buf);
+		Rooms.global.modlog(buf);
+	}
+	logEntry(data) {
+		if (this.pmTarget) return;
+		this.room.logEntry(data);
+	}
+	addModCommand(text, logOnlyText) {
+		this.add('|c|' + this.user.getIdentity(this.room) + '|/log ' + text);
+		this.room.modlog(text + (logOnlyText || ""));
+	}
+	logModCommand(text) {
+		this.room.modlog(text);
 	}
 	can(permission, target, room) {
 		if (!this.user.can(permission, target, room)) {
@@ -171,34 +282,58 @@ class CommandContext {
 	}
 	canBroadcast(suppressMessage) {
 		if (!this.broadcasting && this.cmdToken === BROADCAST_TOKEN) {
-			let message = this.canTalk(this.message);
+			let message = this.canTalk(suppressMessage || this.message);
 			if (!message) return false;
-			if (!this.user.can('broadcast', null, this.room)) {
+			if (!this.pmTarget && !this.user.can('broadcast', null, this.room)) {
 				this.errorReply("You need to be voiced to broadcast this command's information.");
-				this.errorReply("To see it for yourself, use: /" + message.substr(1));
+				this.errorReply("To see it for yourself, use: /" + this.message.substr(1));
 				return false;
 			}
 
 			// broadcast cooldown
-			let normalized = message.toLowerCase().replace(/[^a-z0-9\s!,]/g, '');
-			if (this.room.lastBroadcast === normalized &&
+			let broadcastMessage = message.toLowerCase().replace(/[^a-z0-9\s!,]/g, '');
+
+			if (this.room.lastBroadcast === this.broadcastMessage &&
 					this.room.lastBroadcastTime >= Date.now() - BROADCAST_COOLDOWN) {
 				this.errorReply("You can't broadcast this because it was just broadcast.");
 				return false;
 			}
-			this.add('|c|' + this.user.getIdentity(this.room.id) + '|' + (suppressMessage || message));
-			this.room.lastBroadcast = normalized;
-			this.room.lastBroadcastTime = Date.now();
 
-			this.broadcasting = true;
+			this.message = message;
+			this.broadcastMessage = broadcastMessage;
 		}
+		return true;
+	}
+	runBroadcast(suppressMessage) {
+		if (this.broadcasting || this.cmdToken !== BROADCAST_TOKEN) {
+			// Already being broadcast, or the user doesn't intend to broadcast.
+			return true;
+		}
+
+		if (!this.broadcastMessage) {
+			// Permission hasn't been checked yet. Do it now.
+			if (!this.canBroadcast(suppressMessage)) return false;
+		}
+
+		if (this.pmTarget) {
+			this.add('|c~|' + (suppressMessage || this.message));
+		} else {
+			this.add('|c|' + this.user.getIdentity(this.room.id) + '|' + (suppressMessage || this.message));
+		}
+		if (!this.pmTarget) {
+			this.room.lastBroadcast = this.broadcastMessage;
+			this.room.lastBroadcastTime = Date.now();
+		}
+
+		this.broadcasting = true;
+
 		return true;
 	}
 	parse(message, inNamespace, room) {
 		if (inNamespace && this.cmdToken) {
 			message = this.cmdToken + this.namespaces.concat(message.slice(1)).join(" ");
 		}
-		return CommandParser.parse(message, room || this.room, this.user, this.connection, this.levelsDeep + 1);
+		return CommandParser.parse(message, room || this.room, this.user, this.connection, this.pmTarget, this.levelsDeep + 1);
 	}
 	run(targetCmd, inNamespace) {
 		if (targetCmd === 'constructor') return this.sendReply("Access denied.");
@@ -219,7 +354,7 @@ class CommandContext {
 		try {
 			result = commandHandler.call(this, this.target, this.room, this.user, this.connection, this.cmd, this.message);
 		} catch (err) {
-			if (require('./crashlogger.js')(err, 'A chat command', {
+			if (require('./crashlogger')(err, 'A chat command', {
 				user: this.user.name,
 				room: this.room.id,
 				message: this.message,
@@ -236,9 +371,18 @@ class CommandContext {
 	}
 	canTalk(message, room, targetUser) {
 		if (room === undefined) room = this.room;
+		if (targetUser === undefined && this.pmTarget) {
+			room = undefined;
+			targetUser = this.pmTarget;
+		}
 		let user = this.user;
 		let connection = this.connection;
 
+		if (room && room.id === 'global') {
+			// should never happen
+			console.log(`Command tried to write to global: ${user.name}: ${message}`);
+			return false;
+		}
 		if (!user.named) {
 			connection.popup("You must choose a name before you can talk.");
 			return false;
@@ -252,21 +396,24 @@ class CommandContext {
 				this.errorReply("You are muted and cannot talk in this room.");
 				return false;
 			}
+			if ((!room || !room.battle) && (!targetUser || " +".includes(targetUser.group))) {
+				// in a chat room, or PMing non-staff
+				if (user.namelocked) {
+					this.errorReply("You are namelocked and cannot talk except in battles and to global staff.");
+					return false;
+				}
+			}
 			if (room && room.modchat) {
 				let userGroup = user.group;
-				if (room.auth) {
-					if (room.auth[user.userid]) {
-						userGroup = room.auth[user.userid];
-					} else if (room.isPrivate === true) {
-						userGroup = ' ';
-					}
+				if (!user.can('makeroom')) {
+					userGroup = room.getAuth(user);
 				}
 				if (room.modchat === 'autoconfirmed') {
 					if (!user.autoconfirmed && userGroup === ' ') {
 						this.errorReply("Because moderated chat is set, your account must be at least one week old and you must have won at least one ladder game to speak in this room.");
 						return false;
 					}
-				} else if (Config.groupsranking.indexOf(userGroup) < Config.groupsranking.indexOf(room.modchat) && !user.can('makeroom')) {
+				} else if (Config.groupsranking.indexOf(userGroup) < Config.groupsranking.indexOf(room.modchat)) {
 					let groupName = Config.groups[room.modchat].name || room.modchat;
 					this.errorReply("Because moderated chat is set, you must be of rank " + groupName + " or higher to speak in this room.");
 					return false;
@@ -283,7 +430,9 @@ class CommandContext {
 				connection.popup("Your message can't be blank.");
 				return false;
 			}
-			if (message.length > MAX_MESSAGE_LENGTH && !user.can('ignorelimits')) {
+			let length = message.length;
+			length += 10 * message.replace(/[^\ufdfd]*/g, '').length;
+			if (length > MAX_MESSAGE_LENGTH && !user.can('ignorelimits')) {
 				this.errorReply("Your message is too long: " + message);
 				return false;
 			}
@@ -295,9 +444,24 @@ class CommandContext {
 				return false;
 			}
 
-			if (room && room.id === 'lobby') {
+			if (this.checkFormat(room, message) && !user.can('mute', null, room)) {
+				this.errorReply("Your message was not sent because it contained " + this.checkFormat(room, message));
+				return false;
+			}
+
+			if (!this.checkSlowchat(room, user) && !user.can('mute', null, room)) {
+				this.errorReply("This room has slow-chat enabled. You can only talk once every " + room.slowchat + " seconds.");
+				return false;
+			}
+
+			if (!this.checkBanwords(room, message) && !user.can('mute', null, room)) {
+				this.errorReply("Your message contained banned words.");
+				return false;
+			}
+
+			if (room) {
 				let normalized = message.trim();
-				if ((normalized === user.lastMessage) &&
+				if (room.id === 'lobby' && (normalized === user.lastMessage) &&
 						((Date.now() - user.lastMessageTime) < MESSAGE_COOLDOWN)) {
 					this.errorReply("You can't send the same message again so soon.");
 					return false;
@@ -440,14 +604,24 @@ class CommandContext {
 		let targetUser = Users.get(this.inputUsername, exactName);
 		if (targetUser) {
 			this.targetUser = targetUser;
-			this.targetUsername = this.inputUsername = targetUser.name;
+			this.targetUsername = targetUser.name;
 		} else {
 			this.targetUser = null;
 			this.targetUsername = this.inputUsername;
 		}
 		return target.substr(commaIndex + 1).trim();
 	}
+	splitTargetText(target) {
+		let commaIndex = target.indexOf(',');
+		if (commaIndex < 0) {
+			this.targetUsername = target;
+			return '';
+		}
+		this.targetUsername = target.substr(0, commaIndex);
+		return target.substr(commaIndex + 1).trim();
+	}
 }
+exports.CommandContext = CommandContext;
 
 /**
  * Command parser
@@ -455,33 +629,43 @@ class CommandContext {
  * Usage:
  *   CommandParser.parse(message, room, user, connection)
  *
- * message - the message the user is trying to say
- * room - the room the user is trying to say it in
- * user - the user that sent the message
- * connection - the connection the user sent the message from
- *
- * Returns the message the user should say, or a falsy value which
- * means "don't say anything"
+ * Parses the message. If it's a command, the commnad is executed, if
+ * not, it's displayed directly in the room.
  *
  * Examples:
  *   CommandParser.parse("/join lobby", room, user, connection)
- *     will make the user join the lobby, and return false.
+ *     will make the user join the lobby.
  *
  *   CommandParser.parse("Hi, guys!", room, user, connection)
  *     will return "Hi, guys!" if the user isn't muted, or
- *     if he's muted, will warn him that he's muted, and
- *     return false.
+ *     if he's muted, will warn him that he's muted.
+ *
+ * The return value is the return value of the command handler, if any,
+ * or the message, if there wasn't a command. This value could be a success
+ * or failure (few commands report these) or a Promise for when the command
+ * is done executing, if it's not currently done.
+ *
+ * @param {string} message - the message the user is trying to say
+ * @param {Room} room - the room the user is trying to say it in
+ * @param {User} user - the user that sent the message
+ * @param {Connection} connection - the connection the user sent the message from
+ * @param {User?} pmTarget - the PM the user wants to send the message to
  */
-let parse = exports.parse = function (message, room, user, connection, levelsDeep) {
+let parse = exports.parse = function (message, room, user, connection, pmTarget, levelsDeep = 0) {
 	let cmd = '', target = '', cmdToken = '';
+
 	if (!message || !message.trim().length) return;
-	if (!levelsDeep) {
-		levelsDeep = 0;
-	} else {
-		if (levelsDeep > MAX_PARSE_RECURSION) {
-			return connection.sendTo(room, "Error: Too much recursion");
-		}
+
+	if (levelsDeep > MAX_PARSE_RECURSION) {
+		throw new Error("Too much command recursion");
 	}
+
+	let relatedRoom = null;
+	if (!user.inRooms.has(room.id) || room === Rooms.global) {
+		if (!CommandParser.globalPattern.test(message)) return;
+		relatedRoom = room;
+	}
+	if (relatedRoom) room = Rooms.global;
 
 	if (message.slice(0, 3) === '>> ') {
 		// multiline eval
@@ -517,6 +701,8 @@ let parse = exports.parse = function (message, room, user, connection, levelsDee
 		if (typeof commandHandler === 'string') {
 			// in case someone messed up, don't loop
 			commandHandler = currentCommands[commandHandler];
+		} else if (Array.isArray(commandHandler)) {
+			return parse(cmdToken + 'help ' + cmd.slice(0, -4), room, user, connection, undefined, levelsDeep + 1);
 		}
 		if (commandHandler && typeof commandHandler === 'object') {
 			namespaces.push(cmd);
@@ -541,25 +727,24 @@ let parse = exports.parse = function (message, room, user, connection, levelsDee
 	}
 	let fullCmd = namespaces.concat(cmd).join(' ');
 
-	let context = new CommandContext({
-		target: target, room: room, user: user, connection: connection, cmd: cmd, message: message,
-		namespaces: namespaces, cmdToken: cmdToken, levelsDeep: levelsDeep,
-	});
+	let context = new CommandContext({target, room, user, connection, cmd, message, namespaces, cmdToken, levelsDeep, pmTarget, relatedRoom});
 
-	if (commandHandler) {
-		return context.run(commandHandler);
+	if (typeof commandHandler === 'function') {
+		message = context.run(commandHandler);
 	} else {
 		// Check for mod/demod/admin/deadmin/etc depending on the group ids
 		for (let g in Config.groups) {
 			let groupid = Config.groups[g].id;
-			if (cmd === groupid || cmd === 'global' + groupid) {
-				return parse('/promote ' + toId(target) + ', ' + g, room, user, connection, levelsDeep + 1);
+			if (cmd === groupid) {
+				return parse('/promote ' + toId(target) + ', ' + g, room, user, connection, undefined, levelsDeep + 1);
+			} else if (cmd === 'global' + groupid) {
+				return parse('/globalpromote ' + toId(target) + ', ' + g, room, user, connection, undefined, levelsDeep + 1);
 			} else if (cmd === 'de' + groupid || cmd === 'un' + groupid || cmd === 'globalde' + groupid || cmd === 'deglobal' + groupid) {
-				return parse('/demote ' + toId(target), room, user, connection, levelsDeep + 1);
+				return parse('/demote ' + toId(target), room, user, connection, undefined, levelsDeep + 1);
 			} else if (cmd === 'room' + groupid) {
-				return parse('/roompromote ' + toId(target) + ', ' + g, room, user, connection, levelsDeep + 1);
+				return parse('/roompromote ' + toId(target) + ', ' + g, room, user, connection, undefined, levelsDeep + 1);
 			} else if (cmd === 'roomde' + groupid || cmd === 'deroom' + groupid || cmd === 'roomun' + groupid) {
-				return parse('/roomdemote ' + toId(target), room, user, connection, levelsDeep + 1);
+				return parse('/roomdemote ' + toId(target), room, user, connection, undefined, levelsDeep + 1);
 			}
 		}
 
@@ -578,11 +763,19 @@ let parse = exports.parse = function (message, room, user, connection, levelsDee
 				message = message.charAt(0) + message;
 			}
 		}
+
+		message = context.canTalk(message);
 	}
 
-	message = context.canTalk(message);
+	// Output the message to the room
 
-	return message || false;
+	if (message && message !== true && typeof message.then !== 'function') {
+		room.add('|c|' + user.getIdentity(room.id) + '|' + message);
+	}
+
+	room.update();
+
+	return message;
 };
 
 exports.package = {};
@@ -598,7 +791,9 @@ exports.uncacheTree = function (root) {
 		for (let i = 0; i < uncache.length; ++i) {
 			if (require.cache[uncache[i]]) {
 				newuncache.push.apply(newuncache,
-					require.cache[uncache[i]].children.map(toId)
+					require.cache[uncache[i]].children
+						.filter(cachedModule => !cachedModule.id.endsWith('.node'))
+						.map(cachedModule => cachedModule.id)
 				);
 				delete require.cache[uncache[i]];
 			}

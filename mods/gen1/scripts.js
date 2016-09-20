@@ -41,26 +41,25 @@ exports.BattleScripts = {
 		boostBy: function (boost) {
 			let changed = false;
 			for (let i in boost) {
-				this.boosts[i] += boost[i];
+				let delta = boost[i];
+				if (delta > 0 && this.boosts[i] >= 6) continue;
+				if (delta < 0 && this.boosts[i] <= -6) continue;
+				this.boosts[i] += delta;
 				if (this.boosts[i] > 6) {
 					this.boosts[i] = 6;
 				}
 				if (this.boosts[i] < -6) {
 					this.boosts[i] = -6;
 				}
-				if (this.boosts[i]) {
-					changed = true;
-					// Recalculate the modified stat
-					if (this.stats[i]) {
-						let stat = this.template.baseStats[i];
-						stat = Math.floor(Math.floor(2 * stat + this.set.ivs[i] + Math.floor(this.set.evs[i] / 4)) * this.level / 100 + 5);
-						this.modifiedStats[i] = this.stats[i] = Math.floor(stat);
-						if (this.boosts[i] >= 0) {
-							this.modifyStat(i, [1, 1.5, 2, 2.5, 3, 3.5, 4][this.boosts[i]]);
-						} else {
-							this.modifyStat(i, [100, 66, 50, 40, 33, 28, 25][-this.boosts[i]] / 100);
-						}
-					}
+				changed = true;
+				// Recalculate the modified stat
+				let stat = this.template.baseStats[i];
+				stat = Math.floor(Math.floor(2 * stat + this.set.ivs[i] + Math.floor(this.set.evs[i] / 4)) * this.level / 100 + 5);
+				this.modifiedStats[i] = this.stats[i] = Math.floor(stat);
+				if (this.boosts[i] >= 0) {
+					this.modifyStat(i, [1, 1.5, 2, 2.5, 3, 3.5, 4][this.boosts[i]]);
+				} else {
+					this.modifyStat(i, [100, 66, 50, 40, 33, 28, 25][-this.boosts[i]] / 100);
 				}
 			}
 			return changed;
@@ -126,28 +125,24 @@ exports.BattleScripts = {
 			// Let's check if the lock exists
 			if (pokemon.volatiles['partialtrappinglock'] && target.volatiles['partiallytrapped']) {
 				// Here the partialtrappinglock volatile has been already applied
-				if (!pokemon.volatiles['partialtrappinglock'].locked) {
+				const sourceVolatile = pokemon.volatiles['partialtrappinglock'];
+				const targetVolatile = target.volatiles['partiallytrapped'];
+				if (!sourceVolatile.locked) {
 					// If it's the first hit, we save the target
-					pokemon.volatiles['partialtrappinglock'].locked = target;
-				} else {
-					if (pokemon.volatiles['partialtrappinglock'].locked !== target && target !== pokemon) {
-						// The target switched, therefor, we must re-roll the duration, damage, and accuracy.
-						let duration = [2, 2, 2, 3, 3, 3, 4, 5][this.random(8)];
-						pokemon.volatiles['partialtrappinglock'].duration = duration;
-						pokemon.volatiles['partialtrappinglock'].locked = target;
-						// Duration reset thus partially trapped at 2 always.
-						target.volatiles['partiallytrapped'].duration = 2;
-						// We get the move position for the PP change.
-						let usedMovePos = -1;
-						for (let m in pokemon.moveset) {
-							if (pokemon.moveset[m].id === move.id) usedMovePos = m;
-						}
-						if (usedMovePos > -1 && pokemon.moveset[usedMovePos].pp === 0) {
-							// If we were on the middle of the 0 PP sequence, the PPs get reset to 63.
-							pokemon.moveset[usedMovePos].pp = 63;
-							pokemon.isStale = 2;
-							pokemon.isStaleSource = 'ppoverflow';
-						}
+					sourceVolatile.locked = target;
+				} else if (target !== pokemon && target !== sourceVolatile.locked) {
+					// Our target switched out! Re-roll the duration, damage, and accuracy.
+					const duration = [2, 2, 2, 3, 3, 3, 4, 5][this.random(8)];
+					sourceVolatile.duration = duration;
+					sourceVolatile.locked = target;
+					// Duration reset thus partially trapped at 2 always.
+					targetVolatile.duration = 2;
+					// We get the move position for the PP change.
+					const moveData = pokemon.moveset.find(moveData => moveData.id === move.id);
+					if (moveData && moveData.pp === 0) {
+						moveData.pp = 63;
+						pokemon.isStale = 2;
+						pokemon.isStaleSource = 'ppoverflow';
 					}
 				}
 			} // If we move to here, the move failed and there's no partial trapping lock.
@@ -344,7 +339,11 @@ exports.BattleScripts = {
 			}
 		}
 
-		if (move.category !== 'Status') target.gotAttacked(move, damage, pokemon);
+		if (move.category !== 'Status') {
+			// FIXME: The stored damage should be calculated ignoring Substitute.
+			// https://github.com/Zarel/Pokemon-Showdown/issues/2598
+			target.gotAttacked(move, damage, pokemon);
+		}
 
 		// Checking if substitute fainted
 		if (target.subFainted) doSelfDestruct = false;
@@ -642,7 +641,11 @@ exports.BattleScripts = {
 			}
 		}
 		if (damage !== 0) damage = this.clampIntRange(damage, 1);
-		if (!(effect.id in {'recoil':1, 'drain':1}) && effect.effectType !== 'Status') target.battle.lastDamage = damage;
+		if (!(effect.id in {'recoil':1, 'drain':1}) && effect.effectType !== 'Status') {
+			// FIXME: The stored damage should be calculated ignoring Substitute.
+			// https://github.com/Zarel/Pokemon-Showdown/issues/2598
+			target.battle.lastDamage = damage;
+		}
 		damage = target.damage(damage, source, effect);
 		if (source) source.lastDamage = damage;
 		let name = effect.fullname;
@@ -673,7 +676,7 @@ exports.BattleScripts = {
 			this.faint(target);
 			this.queue = [];
 		} else {
-			damage = this.runEvent('AfterDamage', target, source, effect, damage);
+			// damage = this.runEvent('AfterDamage', target, source, effect, damage);
 		}
 
 		return damage;
@@ -729,6 +732,7 @@ exports.BattleScripts = {
 				basePower: move,
 				type: '???',
 				category: 'Physical',
+				willCrit: false,
 				flags: {},
 			};
 		}

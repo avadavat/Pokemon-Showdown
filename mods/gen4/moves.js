@@ -25,6 +25,13 @@ exports.BattleMovedex = {
 			}
 		},
 	},
+	aromatherapy: {
+		inherit: true,
+		onHit: function (target, source) {
+			this.add('-cureteam', source, '[from] move: Aromatherapy');
+			source.side.pokemon.forEach(pokemon => pokemon.clearStatus());
+		},
+	},
 	assist: {
 		inherit: true,
 		desc: "The user performs a random move from any of the Pokemon on its team. Assist cannot generate itself, Chatter, Copycat, Counter, Covet, Destiny Bond, Detect, Endure, Feint, Focus Punch, Follow Me, Helping Hand, Me First, Metronome, Mimic, Mirror Coat, Mirror Move, Protect, Sketch, Sleep Talk, Snatch, Struggle, Switcheroo, Thief or Trick.",
@@ -71,16 +78,22 @@ exports.BattleMovedex = {
 		effect: {
 			duration: 1,
 			onStart: function (pokemon) {
-				this.effectData.index = 0;
-				while (!pokemon.side.pokemon[this.effectData.index] || pokemon.side.pokemon[this.effectData.index].fainted || pokemon.side.pokemon[this.effectData.index].status) {
-					this.effectData.index++;
+				let index = 0;
+				let team = pokemon.side.pokemon;
+				while (!team[index] || team[index].fainted || team[index].status) {
+					index++;
+					if (index >= team.length) break;
 				}
+				this.effectData.index = index;
 			},
 			onRestart: function (pokemon) {
+				let index = this.effectData.index;
+				let team = pokemon.side.pokemon;
 				do {
-					this.effectData.index++;
-					if (this.effectData.index >= 6) break;
-				} while (!pokemon.side.pokemon[this.effectData.index] || pokemon.side.pokemon[this.effectData.index].fainted || pokemon.side.pokemon[this.effectData.index].status);
+					index++;
+					if (index >= team.length) break;
+				} while (!team[index] || team[index].fainted || team[index].status);
+				this.effectData.index = index;
 			},
 			onModifyAtkPriority: -101,
 			onModifyAtk: function (atk, pokemon) {
@@ -141,6 +154,10 @@ exports.BattleMovedex = {
 	bonerush: {
 		inherit: true,
 		accuracy: 80,
+	},
+	bravebird: {
+		inherit: true,
+		recoil: [1, 3],
 	},
 	brickbreak: {
 		inherit: true,
@@ -333,6 +350,10 @@ exports.BattleMovedex = {
 			return null;
 		},
 	},
+	doubleedge: {
+		inherit: true,
+		recoil: [1, 3],
+	},
 	drainpunch: {
 		inherit: true,
 		basePower: 60,
@@ -466,6 +487,10 @@ exports.BattleMovedex = {
 			return 20;
 		},
 	},
+	flareblitz: {
+		inherit: true,
+		recoil: [1, 3],
+	},
 	focuspunch: {
 		inherit: true,
 		beforeMoveCallback: function () { },
@@ -541,6 +566,15 @@ exports.BattleMovedex = {
 			spa: 1,
 		},
 	},
+	healbell: {
+		inherit: true,
+		onHit: function (target, source) {
+			this.add('-activate', source, 'move: Heal Bell');
+			source.side.pokemon.forEach(pokemon => {
+				if (!pokemon.hasAbility('soundproof')) pokemon.cureStatus(true);
+			});
+		},
+	},
 	healblock: {
 		inherit: true,
 		flags: {protect: 1, mirror: 1},
@@ -556,18 +590,15 @@ exports.BattleMovedex = {
 				this.add('-start', pokemon, 'move: Heal Block');
 			},
 			onDisableMove: function (pokemon) {
-				let disabledMoves = {healingwish:1, lunardance:1, rest:1, swallow:1, wish:1};
-				let moves = pokemon.moveset;
-				for (let i = 0; i < moves.length; i++) {
-					if (disabledMoves[moves[i].id] || this.getMove(moves[i].id).heal) {
-						pokemon.disableMove(moves[i].id);
+				for (let i = 0; i < pokemon.moveset.length; i++) {
+					if (this.getMove(pokemon.moveset[i].id).flags['heal']) {
+						pokemon.disableMove(pokemon.moveset[i].id);
 					}
 				}
 			},
 			onBeforeMovePriority: 6,
 			onBeforeMove: function (pokemon, target, move) {
-				let disabledMoves = {healingwish:1, lunardance:1, rest:1, swallow:1, wish:1};
-				if (disabledMoves[move.id] || move.heal) {
+				if (move.flags['heal']) {
 					this.add('cant', pokemon, 'move: Heal Block', move);
 					return false;
 				}
@@ -1208,6 +1239,10 @@ exports.BattleMovedex = {
 		inherit: true,
 		basePower: 50,
 	},
+	volttackle: {
+		inherit: true,
+		recoil: [1, 3],
+	},
 	whirlpool: {
 		inherit: true,
 		accuracy: 70,
@@ -1234,6 +1269,10 @@ exports.BattleMovedex = {
 				}
 			},
 		},
+	},
+	woodhammer: {
+		inherit: true,
+		recoil: [1, 3],
 	},
 	worryseed: {
 		inherit: true,

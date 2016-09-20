@@ -19,19 +19,15 @@ function getDirTypedContentsSync(dir, forceType) {
 }
 
 function init(callback) {
-	require('./../app.js');
-	for (let listener of process.listeners('uncaughtException')) {
-		process.removeListener('uncaughtException', listener);
-	}
+	require('./../app');
 
 	// Run the battle engine in the main process to keep our sanity
-	let BattleEngine = global.BattleEngine = require('./../battle-engine.js');
+	let BattleEngine = global.BattleEngine = require('./../battle-engine');
 	for (let listener of process.listeners('message')) {
 		process.removeListener('message', listener);
 	}
 
 	// Turn IPC methods into no-op
-	BattleEngine.Battle.prototype.send = noop;
 	BattleEngine.Battle.prototype.receive = noop;
 
 	let Simulator = global.Simulator;
@@ -51,6 +47,9 @@ function init(callback) {
 		this.seed = this.startingSeed = [0x09d56, 0x08642, 0x13656, 0x03653];
 	};
 
+	// Disable writing to modlog
+	Rooms.Room.prototype.modlog = noop;
+
 	callback();
 }
 
@@ -60,7 +59,7 @@ before('initialization', function (done) {
 	// Load and override configuration before starting the server
 	let config;
 	try {
-		require.resolve('./../config/config.js');
+		require.resolve('./../config/config');
 	} catch (err) {
 		if (err.code !== 'MODULE_NOT_FOUND') throw err; // Should never happen
 
@@ -69,7 +68,7 @@ before('initialization', function (done) {
 			fs.readFileSync(path.resolve(__dirname, '../config/config-example.js'))
 		);
 	} finally {
-		config = require('./../config/config.js');
+		config = require('./../config/config');
 	}
 
 	try {
@@ -80,13 +79,16 @@ before('initialization', function (done) {
 		chatRoomsData.loaded = true;
 	} catch (e) {}
 
+	// Actually crash if we crash
+	config.crashguard = false;
+
 	// Don't try to write to file system
 	config.logladderip = false;
 	config.logchallenges = false;
 	config.logchat = false;
 
 	// Don't create a REPL
-	require('./../repl.js').start = noop;
+	require('./../repl').start = noop;
 
 	// Sandbox file system: it's possible for a production server to be running in the same directory.
 	// And using a sandbox is safer anyway.

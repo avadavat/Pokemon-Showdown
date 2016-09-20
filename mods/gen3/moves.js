@@ -22,6 +22,13 @@ exports.BattleMovedex = {
 		inherit: true,
 		flags: {contact: 1, protect: 1, mirror: 1},
 	},
+	aromatherapy: {
+		inherit: true,
+		onHit: function (target, source) {
+			this.add('-cureteam', source, '[from] move: Aromatherapy');
+			source.side.pokemon.forEach(pokemon => pokemon.clearStatus());
+		},
+	},
 	assist: {
 		inherit: true,
 		desc: "The user performs a random move from any of the Pokemon on its team. Assist cannot generate itself, Chatter, Copycat, Counter, Covet, Destiny Bond, Detect, Endure, Feint, Focus Punch, Follow Me, Helping Hand, Me First, Metronome, Mimic, Mirror Coat, Mirror Move, Protect, Sketch, Sleep Talk, Snatch, Struggle, Switcheroo, Thief or Trick.",
@@ -71,16 +78,22 @@ exports.BattleMovedex = {
 		effect: {
 			duration: 1,
 			onStart: function (pokemon) {
-				this.effectData.index = 0;
-				while (!pokemon.side.pokemon[this.effectData.index] || pokemon.side.pokemon[this.effectData.index].fainted || pokemon.side.pokemon[this.effectData.index].status) {
-					this.effectData.index++;
+				let index = 0;
+				let team = pokemon.side.pokemon;
+				while (!team[index] || team[index].fainted || team[index].status) {
+					index++;
+					if (index >= team.length) break;
 				}
+				this.effectData.index = index;
 			},
 			onRestart: function (pokemon) {
+				let index = this.effectData.index;
+				let team = pokemon.side.pokemon;
 				do {
-					this.effectData.index++;
-					if (this.effectData.index >= 6) break;
-				} while (!pokemon.side.pokemon[this.effectData.index] || pokemon.side.pokemon[this.effectData.index].fainted || pokemon.side.pokemon[this.effectData.index].status);
+					index++;
+					if (index >= team.length) break;
+				} while (!team[index] || team[index].fainted || team[index].status);
+				this.effectData.index = index;
 			},
 			onModifyAtkPriority: -101,
 			onModifyAtk: function (atk, pokemon) {
@@ -266,6 +279,10 @@ exports.BattleMovedex = {
 			this.add('-start', source, 'Doom Desire');
 			return null;
 		},
+	},
+	doubleedge: {
+		inherit: true,
+		recoil: [1, 3],
 	},
 	dreameater: {
 		inherit: true,
@@ -458,6 +475,15 @@ exports.BattleMovedex = {
 		onModifyMove: function () { },
 		boosts: {
 			spa: 1,
+		},
+	},
+	healbell: {
+		inherit: true,
+		onHit: function (target, source) {
+			this.add('-activate', source, 'move: Heal Bell');
+			source.side.pokemon.forEach(pokemon => {
+				if (!pokemon.hasAbility('soundproof')) pokemon.cureStatus(true);
+			});
 		},
 	},
 	hiddenpower: {
@@ -690,6 +716,29 @@ exports.BattleMovedex = {
 				return true;
 			}
 		},
+		onHit: function (pokemon) {
+			let moves = [];
+			for (let i = 0; i < pokemon.moveset.length; i++) {
+				let move = pokemon.moveset[i].id;
+				let pp = pokemon.moveset[i].pp;
+				let NoSleepTalk = {
+					assist:1, bide:1, focuspunch:1, metronome:1, mirrormove:1, sleeptalk:1, uproar:1,
+				};
+				if (move && !(NoSleepTalk[move] || this.getMove(move).flags['charge'])) {
+					moves.push({move: move, pp: pp});
+				}
+			}
+			let randomMove = '';
+			if (moves.length) randomMove = moves[this.random(moves.length)];
+			if (!randomMove) {
+				return false;
+			}
+			if (!randomMove.pp) {
+				this.add('cant', pokemon, 'nopp', randomMove.move);
+				return;
+			}
+			this.useMove(randomMove.move, pokemon);
+		},
 	},
 	spikes: {
 		inherit: true,
@@ -711,6 +760,7 @@ exports.BattleMovedex = {
 		inherit: true,
 		pp: 10,
 		effect: {
+			noCopy: true,
 			onStart: function (target) {
 				this.effectData.layers = 1;
 				this.add('-start', target, 'stockpile' + this.effectData.layers);

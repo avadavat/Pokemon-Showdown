@@ -6,14 +6,6 @@
 
 'use strict';
 
-function toArrayOfArrays(map) {
-	let ret = [];
-	map.forEach((value, key) => {
-		ret.push([value, key]);
-	});
-	return ret;
-}
-
 function toArtistId(artist) { // toId would return '' for foreign/sadistic artists
 	return artist.toLowerCase().replace(/\s/g, '').replace(/\b&\b/g, '');
 }
@@ -25,8 +17,12 @@ let artistOfTheDay = {
 };
 
 let theStudio = Rooms.get('thestudio');
-if (theStudio && !theStudio.plugin) {
-	theStudio.plugin = artistOfTheDay;
+if (theStudio) {
+	if (theStudio.plugin) {
+		artistOfTheDay = theStudio.plugin;
+	} else {
+		theStudio.plugin = artistOfTheDay;
+	}
 }
 
 let commands = {
@@ -63,8 +59,8 @@ let commands = {
 		if (!artistOfTheDay.pendingNominations) return this.sendReply("Nominations for the Artist of the Day are not in progress.");
 		if (!artistOfTheDay.nominations.size) return this.sendReply("No nominations have been submitted yet.");
 
-		let nominations = toArrayOfArrays(artistOfTheDay.nominations);
-		let artist = nominations[~~(Math.random() * nominations.length)][0];
+		let nominations = Array.from(artistOfTheDay.nominations);
+		let artist = nominations[~~(Math.random() * nominations.length)][1];
 		artistOfTheDay.pendingNominations = false;
 		artistOfTheDay.nominations.clear();
 		artistOfTheDay.removedNominators = [];
@@ -126,11 +122,11 @@ let commands = {
 		if (!artistOfTheDay.pendingNominations) return this.sendReply("Nominations for the Artist of the Day are not in progress.");
 
 		let removedNominators = artistOfTheDay.removedNominators;
-		if (removedNominators.indexOf(user) >= 0) return this.sendReply("Since your nomination has been removed, you cannot submit another artist until the next round.");
+		if (removedNominators.includes(user)) return this.sendReply("Since your nomination has been removed, you cannot submit another artist until the next round.");
 
 		let alts = user.getAlts();
 		for (let i = 0; i < removedNominators.length; i++) {
-			if (alts.indexOf(removedNominators[i].name) >= 0) return this.sendReply("Since your nomination has been removed, you cannot submit another artist until the next round.");
+			if (alts.includes(removedNominators[i].name)) return this.sendReply("Since your nomination has been removed, you cannot submit another artist until the next round.");
 		}
 
 		let nominationId = toArtistId(target);
@@ -138,9 +134,9 @@ let commands = {
 
 		let userid = user.userid;
 		let latestIp = user.latestIp;
-		for (let data, nominationsIterator = artistOfTheDay.nominations.entries(); !!(data = nominationsIterator.next().value);) { // replace with for-of loop once available
+		for (let data of artistOfTheDay.nominations) {
 			let nominator = data[0];
-			if (nominator.ips[latestIp] && nominator.userid !== userid || alts.indexOf(nominator.name) >= 0) return this.sendReply("You have already submitted a nomination for the Artist of the Day under the name " + nominator.name + ".");
+			if (nominator.ips[latestIp] && nominator.userid !== userid || alts.includes(nominator.name)) return this.sendReply("You have already submitted a nomination for the Artist of the Day under the name " + nominator.name + ".");
 			if (toArtistId(data[1]) === nominationId) return this.sendReply("" + target + " has already been nominated.");
 		}
 
@@ -175,20 +171,20 @@ let commands = {
 			return this.sendReplyBox(buffer);
 		}
 
-		if (!this.canBroadcast()) return false;
+		if (!this.runBroadcast()) return false;
 		if (!artistOfTheDay.nominations.size) return this.sendReplyBox("No nominations have been submitted yet.");
 
-		let nominations = toArrayOfArrays(artistOfTheDay.nominations).sort((a, b) => a[0].localeCompare(b[0]));
+		let nominations = Array.from(artistOfTheDay.nominations).sort((a, b) => a[1].localeCompare(b[1]));
 
 		buffer += "Current nominations (" + nominations.length + "):";
 		for (let i = 0; i < nominations.length; i++) {
 			buffer += "<br />" +
-				"- " + Tools.escapeHTML(nominations[i][0]) + " (submitted by " + Tools.escapeHTML(nominations[i][1].name) + ")";
+				"- " + Tools.escapeHTML(nominations[i][1]) + " (submitted by " + Tools.escapeHTML(nominations[i][0].name) + ")";
 		}
 
 		this.sendReplyBox(buffer);
 	},
-	viewnomshelp: ["/aotd viewnoms - View the current nominations for the Artist of the Day. Requires: % @ # & ~"],
+	viewnomshelp: ["/aotd viewnoms - View the current nominations for the Artist of the Day. Requires: % @ * # & ~"],
 
 	removenom: function (target, room, user) {
 		if (room.id !== 'thestudio') return this.errorReply('This command can only be used in The Studio.');
@@ -203,7 +199,7 @@ let commands = {
 		let userid = toId(name);
 		if (!userid) return this.errorReply("'" + name + "' is not a valid username.");
 
-		for (let nominator, nominatorsIterator = artistOfTheDay.nominations.keys(); !!(nominator = nominatorsIterator.next().value);) { // replace with for-of loop once available
+		for (let nominator of artistOfTheDay.nominations.keys()) {
 			if (nominator.userid === userid) {
 				artistOfTheDay.nominations.delete(nominator);
 				artistOfTheDay.removedNominators.push(nominator);
@@ -213,7 +209,7 @@ let commands = {
 
 		this.sendReply("User '" + name + "' has no nomination for the Artist of the Day.");
 	},
-	removenomhelp: ["/aotd removenom [username] - Remove a user\'s nomination for the Artist of the Day and prevent them from voting again until the next round. Requires: % @ # & ~"],
+	removenomhelp: ["/aotd removenom [username] - Remove a user\'s nomination for the Artist of the Day and prevent them from voting again until the next round. Requires: % @ * # & ~"],
 
 	set: function (target, room, user) {
 		if (room.id !== 'thestudio') return this.errorReply('This command can only be used in The Studio.');
@@ -227,13 +223,13 @@ let commands = {
 		Rooms.global.writeChatRoomData();
 		this.privateModCommand("(" + user.name + " set the Artist of the Day to " + target + ".)");
 	},
-	sethelp: ["/aotd set [artist] - Set the Artist of the Day. Requires: % @ # & ~"],
+	sethelp: ["/aotd set [artist] - Set the Artist of the Day. Requires: % @ * # & ~"],
 
 	quote: function (target, room, user) {
 		if (room.id !== 'thestudio') return this.errorReply('This command can only be used in The Studio.');
 		if (!room.chatRoomData) return false;
 		if (!target) {
-			if (!this.canBroadcast()) return;
+			if (!this.runBroadcast()) return;
 			if (!room.chatRoomData.artistQuoteOfTheDay) return this.sendReplyBox("The Artist Quote of the Day has not been set.");
 			return this.sendReplyBox(
 				"The current <strong>Artist Quote of the Day</strong> is:<br />" +
@@ -264,13 +260,13 @@ let commands = {
 
 	'': function (target, room) {
 		if (room.id !== 'thestudio') return this.errorReply('This command can only be used in The Studio.');
-		if (!room.chatRoomData || !this.canBroadcast()) return false;
+		if (!room.chatRoomData || !this.runBroadcast()) return false;
 		this.sendReplyBox("The Artist of the Day " + (room.chatRoomData.artistOfTheDay ? "is " + room.chatRoomData.artistOfTheDay + "." : "has not been set yet."));
 	},
 
 	help: function (target, room) {
 		if (room.id !== 'thestudio') return this.errorReply('This command can only be used in The Studio.');
-		if (!room.chatRoomData || !this.canBroadcast()) return false;
+		if (!room.chatRoomData || !this.runBroadcast()) return false;
 		this.sendReply("Use /help aotd to view help for all commands, or /help aotd [command] for help on a specific command.");
 	},
 };
@@ -280,13 +276,13 @@ exports.commands = {
 	aotdhelp: [
 		"The Studio: Artist of the Day plugin commands:",
 		"- /aotd - View the Artist of the Day.",
-		"- /aotd start - Start nominations for the Artist of the Day. Requires: % @ # & ~",
+		"- /aotd start - Start nominations for the Artist of the Day. Requires: % @ * # & ~",
 		"- /aotd nom [artist] - Nominate an artist for the Artist of the Day.",
-		"- /aotd viewnoms - View the current nominations for the Artist of the Day. Requires: % @ # & ~",
+		"- /aotd viewnoms - View the current nominations for the Artist of the Day. Requires: % @ * # & ~",
 		"- /aotd removenom [username] - Remove a user's nomination for the Artist of the Day and prevent them from voting again until the next round. Requires: % @ # & ~",
-		"- /aotd end - End nominations for the Artist of the Day and set it to a randomly selected artist. Requires: % @ # & ~",
+		"- /aotd end - End nominations for the Artist of the Day and set it to a randomly selected artist. Requires: % @ * # & ~",
 		"- /aotd prenom [artist] - Nominate an artist for the Artist of the Day between nomination periods.",
-		"- /aotd set [artist] - Set the Artist of the Day. Requires: % @ # & ~",
+		"- /aotd set [artist] - Set the Artist of the Day. Requires: % @ * # & ~",
 		"- /aotd quote - View the current Artist Quote of the Day.",
 		"- /aotd quote [quote] - Set the Artist Quote of the Day. Requires: # & ~",
 	],

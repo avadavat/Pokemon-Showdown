@@ -13,28 +13,43 @@
 
 'use strict';
 
-require('sugar-deprecated')(require('./crashlogger.js'));
-Object.defineProperty(Object, 'values', {writable: true, configurable: true, value: require('object.values')});
-
 const fs = require('fs');
 const path = require('path');
+
+// shim Object.values
+if (!Object.values) {
+	Object.values = function (object) {
+		let values = [];
+		for (let k in object) values.push(object[k]);
+		return values;
+	};
+}
+// shim Array.prototype.includes
+if (!Array.prototype.includes) {
+	Object.defineProperty(Array.prototype, 'includes', { // eslint-disable-line no-extend-native
+		writable: true, configurable: true,
+		value: function (object) {
+			return this.indexOf(object) !== -1;
+		},
+	});
+}
 
 module.exports = (() => {
 	let moddedTools = {};
 
 	let dataTypes = ['Pokedex', 'FormatsData', 'Learnsets', 'Movedex', 'Statuses', 'TypeChart', 'Scripts', 'Items', 'Abilities', 'Natures', 'Formats', 'Aliases'];
 	let dataFiles = {
-		'Pokedex': 'pokedex.js',
-		'Movedex': 'moves.js',
-		'Statuses': 'statuses.js',
-		'TypeChart': 'typechart.js',
-		'Scripts': 'scripts.js',
-		'Items': 'items.js',
-		'Abilities': 'abilities.js',
-		'Formats': 'rulesets.js',
-		'FormatsData': 'formats-data.js',
-		'Learnsets': 'learnsets.js',
-		'Aliases': 'aliases.js',
+		'Pokedex': 'pokedex',
+		'Movedex': 'moves',
+		'Statuses': 'statuses',
+		'TypeChart': 'typechart',
+		'Scripts': 'scripts',
+		'Items': 'items',
+		'Abilities': 'abilities',
+		'Formats': 'rulesets',
+		'FormatsData': 'formats-data',
+		'Learnsets': 'learnsets',
+		'Aliases': 'aliases',
 	};
 
 	let BattleNatures = dataFiles.Natures = {
@@ -172,7 +187,6 @@ module.exports = (() => {
 	 * If we're expecting a string and being given anything that isn't a string
 	 * or a number, it's safe to assume it's an error, and return ''
 	 */
-
 	Tools.prototype.getString = function (str) {
 		if (typeof str === 'string' || typeof str === 'number') return '' + str;
 		return '';
@@ -198,7 +212,6 @@ module.exports = (() => {
 	 * getName also enforces that there are not multiple space characters
 	 * in the name, although this is not strictly necessary for safety.
 	 */
-
 	Tools.prototype.getName = function (name) {
 		if (typeof name !== 'string' && typeof name !== 'number') return '';
 		name = ('' + name).replace(/[\|\s\[\]\,\u202e]+/g, ' ').trim();
@@ -230,18 +243,30 @@ module.exports = (() => {
 	};
 	let toId = Tools.prototype.getId;
 
+	Tools.prototype.getSpecies = function (species) {
+		let id = toId(species || '');
+		let template = this.getTemplate(id);
+		if (template.otherForms && template.otherForms.indexOf(id) >= 0) {
+			let form = id.slice(template.species.length);
+			species = template.species + '-' + form[0].toUpperCase() + form.slice(1);
+		} else {
+			species = template.species;
+		}
+		return species;
+	};
+
 	Tools.prototype.getTemplate = function (template) {
 		if (!template || typeof template === 'string') {
 			let name = (template || '').trim();
 			let id = toId(name);
-			if (this.data.Aliases[id]) {
+			if (id !== 'constructor' && this.data.Aliases[id]) {
 				name = this.data.Aliases[id];
 				id = toId(name);
 			}
 			if (!this.data.Pokedex[id]) {
 				if (id.startsWith('mega') && this.data.Pokedex[id.slice(4) + 'mega']) {
 					id = id.slice(4) + 'mega';
-				} else if (id.startsWith('m') && this.data.Pokedex[id.slice(1) + 'mega'])  {
+				} else if (id.startsWith('m') && this.data.Pokedex[id.slice(1) + 'mega']) {
 					id = id.slice(1) + 'mega';
 				} else if (id.startsWith('primal') && this.data.Pokedex[id.slice(6) + 'primal']) {
 					id = id.slice(6) + 'primal';
@@ -250,7 +275,7 @@ module.exports = (() => {
 				}
 			}
 			template = {};
-			if (id && this.data.Pokedex[id]) {
+			if (id && id !== 'constructor' && this.data.Pokedex[id]) {
 				template = this.data.Pokedex[id];
 				if (template.cached) return template;
 				template.cached = true;
@@ -322,7 +347,7 @@ module.exports = (() => {
 				let matches = /([a-z]*)([0-9]*)/.exec(id);
 				id = matches[1];
 			}
-			if (id && this.data.Movedex[id]) {
+			if (id && id !== 'constructor' && this.data.Movedex[id]) {
 				move = this.data.Movedex[id];
 				if (move.cached) return move;
 				move.cached = true;
@@ -452,8 +477,11 @@ module.exports = (() => {
 				name = this.data.Aliases[id];
 				id = toId(name);
 			}
+			if (id && !this.data.Items[id] && this.data.Items[id + 'berry']) {
+				id += 'berry';
+			}
 			item = {};
-			if (id && this.data.Items[id]) {
+			if (id && id !== 'constructor' && this.data.Items[id]) {
 				item = this.data.Items[id];
 				if (item.cached) return item;
 				item.cached = true;
@@ -489,7 +517,7 @@ module.exports = (() => {
 			let name = (ability || '').trim();
 			let id = toId(name);
 			ability = {};
-			if (id && this.data.Abilities[id]) {
+			if (id && id !== 'constructor' && this.data.Abilities[id]) {
 				ability = this.data.Abilities[id];
 				if (ability.cached) return ability;
 				ability.cached = true;
@@ -522,7 +550,7 @@ module.exports = (() => {
 			let id = toId(type);
 			id = id.charAt(0).toUpperCase() + id.substr(1);
 			type = {};
-			if (id && this.data.TypeChart[id]) {
+			if (id && id !== 'constructor' && this.data.TypeChart[id]) {
 				type = this.data.TypeChart[id];
 				if (type.cached) return type;
 				type.cached = true;
@@ -543,7 +571,7 @@ module.exports = (() => {
 			let name = (nature || '').trim();
 			let id = toId(name);
 			nature = {};
-			if (id && this.data.Natures[id]) {
+			if (id && id !== 'constructor' && this.data.Natures[id]) {
 				nature = this.data.Natures[id];
 				if (nature.cached) return nature;
 				nature.cached = true;
@@ -588,15 +616,18 @@ module.exports = (() => {
 					if (subformat.banlist[i].includes('+')) {
 						if (subformat.banlist[i].includes('++')) {
 							complexList = subformat.banlist[i].split('++');
+							let banlist = complexList.join('+');
 							for (let j = 0; j < complexList.length; j++) {
 								complexList[j] = toId(complexList[j]);
 							}
+							complexList.unshift(banlist);
 							format.teamBanTable.push(complexList);
 						} else {
 							complexList = subformat.banlist[i].split('+');
 							for (let j = 0; j < complexList.length; j++) {
 								complexList[j] = toId(complexList[j]);
 							}
+							complexList.unshift(subformat.banlist[i]);
 							format.setBanTable.push(complexList);
 						}
 					}
@@ -608,7 +639,7 @@ module.exports = (() => {
 					if (banlistTable['Rule:' + toId(subformat.ruleset[i])]) continue;
 
 					banlistTable['Rule:' + toId(subformat.ruleset[i])] = subformat.ruleset[i];
-					if (format.ruleset.indexOf(subformat.ruleset[i]) < 0) format.ruleset.push(subformat.ruleset[i]);
+					if (!format.ruleset.includes(subformat.ruleset[i])) format.ruleset.push(subformat.ruleset[i]);
 
 					let subsubformat = this.getFormat(subformat.ruleset[i]);
 					if (subsubformat.ruleset || subsubformat.banlist) {
@@ -691,6 +722,27 @@ module.exports = (() => {
 		return ('' + str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;').replace(/\//g, '&#x2f;');
 	};
 
+	Tools.prototype.html = function (strings) {
+		let buf = strings[0];
+		for (let i = 1; i < arguments.length; i++) {
+			buf += moddedTools.base.escapeHTML(arguments[i]);
+			buf += strings[i];
+		}
+		return buf;
+	};
+	Tools.prototype.plural = function (num, plural, singular) {
+		if (!plural) plural = 's';
+		if (!singular) singular = '';
+		if (num && typeof num.length === 'number') {
+			num = num.length;
+		} else if (num && typeof num.size === 'number') {
+			num = num.size;
+		} else {
+			num = Number(num);
+		}
+		return (num !== 1 ? plural : singular);
+	};
+
 	Tools.prototype.toTimeStamp = function (date, options) {
 		// Return a timestamp in the form {yyyy}-{MM}-{dd} {hh}:{mm}:{ss}.
 		// Optionally reports hours in mod-12 format.
@@ -704,13 +756,17 @@ module.exports = (() => {
 		return parts.slice(0, 3).join("-") + " " + parts.slice(3, 6).join(":") + (isHour12 ? " " + parts[6] : "");
 	};
 
-	Tools.prototype.toDurationString = function (number) {
+	Tools.prototype.toDurationString = function (number, options) {
 		// TODO: replace by Intl.DurationFormat or equivalent when it becomes available (ECMA-402)
 		// https://github.com/tc39/ecma402/issues/47
 		const date = new Date(+number);
 		const parts = [date.getUTCFullYear() - 1970, date.getUTCMonth(), date.getUTCDate() - 1, date.getUTCHours(), date.getUTCMinutes(), date.getUTCSeconds()];
 		const unitNames = ["second", "minute", "hour", "day", "month", "year"];
 		const positiveIndex = parts.findIndex(elem => elem > 0);
+		if (options && options.hhmmss) {
+			let string = parts.slice(positiveIndex).map(value => value < 10 ? "0" + value : "" + value).join(":");
+			return string.length === 2 ? "00:" + string : string;
+		}
 		return parts.slice(positiveIndex).reverse().map((value, index) => value ? value + " " + unitNames[index] + (value > 1 ? "s" : "") : "").reverse().join(" ").trim();
 	};
 
@@ -1105,7 +1161,7 @@ module.exports = (() => {
 		this.data.Aliases = BattleAliases;
 
 		// Load formats
-		let maybeFormats = tryRequire('./config/formats.js');
+		let maybeFormats = tryRequire('./config/formats');
 		if (maybeFormats instanceof Error) {
 			if (maybeFormats.code !== 'MODULE_NOT_FOUND') throw new Error("CRASH LOADING FORMATS:\n" + maybeFormats.stack);
 		}
@@ -1123,11 +1179,18 @@ module.exports = (() => {
 			if (format.tournamentShow === undefined) format.tournamentShow = true;
 			if (format.mod === undefined) format.mod = 'base';
 			if (!moddedTools[format.mod]) throw new Error("Format `" + format.name + "` requires nonexistent mod: `" + format.mod + "`");
-			this.data.Formats[id] = format;
+			this.installFormat(id, format);
 		}
 
 		this.formatsLoaded = true;
 		return this;
+	};
+
+	Tools.prototype.installFormat = function (id, format) {
+		this.data.Formats[id] = format;
+		if (!this.isBase) {
+			moddedTools.base.data.Formats[id] = format;
+		}
 	};
 
 	/**
