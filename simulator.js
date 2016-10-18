@@ -217,9 +217,10 @@ class Battle {
 			this.room.push(lines.slice(3));
 			this.started = true;
 			this.inactiveSide = -1;
+			const opponent = (lines[2] === this.room.p1.name) ? this.room.p2.name : this.room.p1.name;
 			if (!this.ended) {
 				this.ended = true;
-				console.log('game won:', lines[2]);
+				console.log(`[win update] ${Date.now()},${lines[0]},w,${lines[2]},l,${opponent}`);
 				this.room.win(lines[2]);
 				this.removeAllPlayers();
 			}
