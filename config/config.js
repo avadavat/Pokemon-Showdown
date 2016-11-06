@@ -3,7 +3,7 @@ exports.port = 8000;
 
 // @ hey marten, you need this line on your server! this specifies the host
 // and without it, you can't accept incoming connections from bots.
-// exports.bindaddress = 'metal-heart.org';
+// exports.bindaddress = 'leftoversagain.net';
 
 // proxyip - proxy IPs with trusted X-Forwarded-For headers
 //   This can be either false (meaning not to trust any proxies) or an array

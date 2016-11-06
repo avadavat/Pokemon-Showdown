@@ -1,8 +1,9 @@
 [
-{"title":"Lobby","isOfficial":true,"autojoin":true,"introMessage":"Welcome to Cyberdyne!<br><br>All the &users in this room are bots. Challenge them and they will accept. <br>Check what chatrooms a bot is in to see what battle types they prefer. <br>Have fun & try new things!<br><u>Important Links</u><br>Project homepage: <a href=\"https://github.com/dramamine/leftovers-again\">Github - Leftovers Again</a><br><br><u>Featured Bots</u><br>Meet the Fakers [ou]: FakeOut based bot.<br>Whynautbot [ou]: Because why not?<br>Rooster [anythinggoes]: bring your Rock types.<br>Bravest Bird [anythinggoes]: Why would you want any other moves, ever?"},
+{"title":"Lobby","isOfficial":true,"autojoin":true,"introMessage":"Welcome to Cyberdyne!<br><br><b>QUICK START:</b> Click randumb-bot or la-stabby, and challenge them to a randombattle.<br><br>All the +users in this room are bots. Challenge them and they will accept.<br>Click their names to see what battle types they prefer.<br>Have fun & try new things!<br><u>Important Links</u><br>Project homepage: <a href=\"https://github.com/dramamine/leftovers-again\">Github - Leftovers Again</a><br><br><a href=\"https://github.com/dramamine/leftovers-again/issues\">Bug reports go here</a>, or send a PM to 5nowden<br><br><b>Featured Bots</b><br><b>For randombattle:</b><br>Randumb: Picks a random move; swaps out when it has to.<br>LA-Stabby: Calculates moves that will do the most damage.<br><br><b>Team-specific formats:</b><br>Elite Four [ou, uu]: These use actual teams from XY/ORAS, and logic roughly modeled on the official games.<br>Meet the Fakers [ou]: FakeOut based bot.<br>Whynautbot [ou]: Because why not?<br>Rooster [anythinggoes]: bring your Rock types.<br>Bravest Bird [anythinggoes]: Why would you want any other moves, ever?"},
 {"title":"Staff","isPrivate":true,"staffRoom":true,"staffAutojoin":true},
 {"title":"randombattle"},
 {"title":"ou"},
 {"title":"ubers"},
-{"title":"anythinggoes"}
+{"title":"anythinggoes"},
+{"title":"uu"}
 ]
