@@ -10,6 +10,41 @@ Punishments.roomPunishmentTypes.set('GIVEAWAYBAN', 'banned from giveaways');
 
 const BAN_DURATION = 7 * 24 * 60 * 60 * 1000;
 
+// Regex copied from the client
+const domainRegex = '[a-z0-9\\-]+(?:[.][a-z0-9\\-]+)*';
+const parenthesisRegex = '[(](?:[^\\s()<>&]|&amp;)*[)]';
+const linkRegex = new RegExp(
+	'\\b' +
+	'(?:' +
+		'(?:' +
+			// When using www. or http://, allow any-length TLD (like .museum)
+			'(?:https?://|www[.])' + domainRegex +
+			'|' + domainRegex + '[.]' +
+				// Allow a common TLD, or any 2-3 letter TLD followed by : or /
+				'(?:com?|org|net|edu|info|us|jp|[a-z]{2,3}(?=[:/]))' +
+		')' +
+		'(?:[:][0-9]+)?' +
+		'\\b' +
+		'(?:' +
+			'/' +
+			'(?:' +
+				'(?:' +
+					'[^\\s()&]|&amp;|&quot;' +
+					'|' + parenthesisRegex +
+				')*' +
+				// URLs usually don't end with punctuation, so don't allow
+				// punctuation symbols that probably aren't related to URL.
+				'(?:' +
+					'[^\\s`()\\[\\]{}\'".,!?;:&]' +
+					'|' + parenthesisRegex +
+				')' +
+			')?' +
+		')?' +
+		'|[a-z0-9.]+\\b@' + domainRegex + '[.][a-z]{2,3}' +
+	')',
+	'ig'
+);
+
 function checkPlural(variable, plural, singular) {
 	if (!plural) plural = 's';
 	if (!singular) singular = '';
@@ -108,7 +143,6 @@ class Giveaway {
 		text = toId(text);
 		if (mons.size) {
 			mons.forEach(function (value, key) {
-				let useBWSprites = value.gen === 7;
 				let spriteid = value.spriteid;
 				if (value.otherForms) {
 					for (let i = 0; i < value.otherForms.length; i++) {
@@ -120,11 +154,10 @@ class Giveaway {
 				}
 				if (value.otherFormes) {
 					for (let i = 0; i < value.otherFormes.length; i++) {
-						// Hardcore alola formes.
+						// Allow "alolan <name>" to match as well.
 						if (value.otherFormes[i].endsWith('alola')) {
 							if (/alolan?/.test(text)) {
-								spriteid += '-alolan';
-								useBWSprites = true;
+								spriteid += '-alola';
 								break;
 							}
 						}
@@ -137,20 +170,25 @@ class Giveaway {
 				if (mons.size > 1) {
 					let top = Math.floor(value.num / 12) * 30;
 					let left = (value.num % 12) * 40;
-					output += `<div style="display:inline-block;width:40px;height:30px;background:transparent url('/sprites/xyicons-sheet.png?a1') no-repeat scroll -${left}px -${top}px'"></div>`;
+					output += `<div style="display:inline-block;width:40px;height:30px;background:transparent url('/sprites/smicons-sheet.png?a1') no-repeat scroll -${left}px -${top}px'"></div>`;
 				} else {
 					let shiny = (text.includes("shiny") && !text.includes("shinystone") ? '-shiny' : '');
-					output += `<img src="/sprites/${useBWSprites ? 'bw' : 'xyani'}${shiny}/${spriteid}.${useBWSprites ? 'png' : 'gif'}">`;
+					output += `<img src="/sprites/xyani${shiny}/${spriteid}.gif">`;
 				}
 			});
 		}
 		return output;
 	}
 
+	static parseText(text) {
+		// Manually unescape '/' since this is needed for links.
+		return Chat.escapeHTML(text).replace(/&#x2f;/g, '/').replace(linkRegex, uri => `<a href=${uri}>${uri}</a>`);
+	}
+
 	generateWindow(rightSide) {
 		return `<p style="text-align:center;font-size:14pt;font-weight:bold;margin-bottom:2px;">It's giveaway time!</p>` +
 			`<p style="text-align:center;font-size:7pt;">Giveaway started by ${Chat.escapeHTML(this.host.name)}</p>` +
-			`<table style="margin-left:auto;margin-right:auto;"><tr><td style="text-align:center;width:45%">${this.sprite}<p style="font-weight:bold;">Giver: ${this.giver}</p>${Chat.escapeHTML(this.prize)}</td>` +
+			`<table style="margin-left:auto;margin-right:auto;"><tr><td style="text-align:center;width:45%">${this.sprite}<p style="font-weight:bold;">Giver: ${this.giver}</p>${Giveaway.parseText(this.prize)}</td>` +
 			`<td style="text-align:center;width:45%">${rightSide}</td></tr></table><p style="text-align:center;font-size:7pt;font-weight:bold;"><u>Note:</u> Please do not join if you don't have a 3DS and a copy of the relevant game.</p>`;
 	}
 }
@@ -234,7 +272,7 @@ class QuestionGiveaway extends Giveaway {
 				this.clearTimer();
 				this.room.modlog(`${this.winner.name} won ${this.giver.name}'s giveaway for a "${this.prize}"`);
 				this.send(this.generateWindow(`<p style="text-align:center;font-size:12pt;"><b>${Chat.escapeHTML(this.winner.name)}</b> won the giveaway! Congratulations!</p>` +
-				`<p style="text-align:center;">${this.question}<br/>Correct answer${checkPlural(this.answers)}: ${this.answers.join(', ')}</p>`));
+				`<p style="text-align:center;">${this.question}<br />Correct answer${checkPlural(this.answers)}: ${this.answers.join(', ')}</p>`));
 				if (this.winner.connected) this.winner.popup(`You have won the giveaway. PM **${Chat.escapeHTML(this.giver.name)}** to claim your prize!`);
 				if (this.giver.connected) this.giver.popup(`${Chat.escapeHTML(this.winner.name)} has won your question giveaway!`);
 			}
@@ -270,7 +308,7 @@ class LotteryGiveaway extends Giveaway {
 	generateReminder(joined) {
 		let cmd = (joined ? 'Leave' : 'Join');
 		let button = `<button style="margin:4px;" name="send" value="/giveaway ${toId(cmd)}lottery"><font size=1><b>${cmd}</b></font></button>`;
-		return this.generateWindow(`The lottery drawing will occur in 2 minutes, and with ${this.maxwinners} winner${checkPlural(this.maxwinners)}!<br/>${button}</p>`);
+		return this.generateWindow(`The lottery drawing will occur in 2 minutes, and with ${this.maxwinners} winner${checkPlural(this.maxwinners)}!<br />${button}</p>`);
 	}
 
 	display() {
@@ -340,7 +378,7 @@ class LotteryGiveaway extends Giveaway {
 			this.phase = 'ended';
 			let winnerNames = this.winners.map(winner => winner.name).join(', ');
 			this.room.modlog(`${winnerNames} won ${this.giver.name}'s giveaway for "${this.prize}"`);
-			this.send(this.generateWindow(`<p style="text-align:center;font-size:10pt;font-weight:bold;">Lottery Draw</p><p style="text-align:center;">${Object.keys(this.joined).length} users joined the giveaway.<br/>Our lucky winner${checkPlural(this.winners)}: <b>${Chat.escapeHTML(winnerNames)}!</b> Congratulations!</p>`));
+			this.send(this.generateWindow(`<p style="text-align:center;font-size:10pt;font-weight:bold;">Lottery Draw</p><p style="text-align:center;">${Object.keys(this.joined).length} users joined the giveaway.<br />Our lucky winner${checkPlural(this.winners)}: <b>${Chat.escapeHTML(winnerNames)}!</b> Congratulations!</p>`));
 			for (let i = 0; i < this.winners.length; i++) {
 				if (this.winners[i].connected) this.winners[i].popup(`You have won the lottery giveaway! PM **${this.giver.name}** to claim your prize!`);
 			}

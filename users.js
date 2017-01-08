@@ -654,7 +654,6 @@ class User {
 	}
 	validateRename(name, tokenData, newlyRegistered, challenge) {
 		let userid = toId(name);
-
 		let tokenDataSplit = tokenData.split(',');
 
 		if (tokenDataSplit.length < 5) {
@@ -686,9 +685,9 @@ class User {
 		}
 
 		// future-proofing
-		this.s1 = tokenDataSplit[5];
-		this.s2 = tokenDataSplit[6];
-		this.s3 = tokenDataSplit[7];
+		// this.s1 = tokenDataSplit[5];
+		// this.s2 = tokenDataSplit[6];
+		// this.s3 = tokenDataSplit[7];
 
 		this.handleRename(name, userid, newlyRegistered, tokenDataSplit[2]);
 	}
@@ -937,7 +936,9 @@ class User {
 			this.namelocked = false;
 		}
 		if (this.autoconfirmed && this.semilocked) {
-			if (this.semilocked === '#dnsbl') {
+			if (this.semilocked.startsWith('#sharedip')) {
+				this.semilocked = false;
+			} else if (this.semilocked === '#dnsbl') {
 				this.popup(`You are locked because someone using your IP has spammed/hacked other websites. This usually means you're using a proxy, in a country where other people commonly hack, or have a virus on your computer that's spamming websites.`);
 				this.semilocked = '#dnsbl.';
 			}
