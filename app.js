@@ -22,15 +22,15 @@
  *
  * Tools - from tools.js
  *
- *   Handles getting data about Pokemon, items, etc. *
+ *   Handles getting data about Pokemon, items, etc.
  *
- * Simulator - from simulator.js
+ * Ladders - from ladders.js and ladders-remote.js
  *
- *   Used to access the simulator itself.
+ *   Handles Elo rating tracking for players.
  *
- * CommandParser - from command-parser.js
+ * Chat - from chat.js
  *
- *   Parses text commands like /me
+ *   Handles chat and parses chat commands like /me and /ban
  *
  * Sockets - from sockets.js
  *
@@ -40,6 +40,11 @@
  * @license MIT license
  */
 
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+
 /*********************************************************
  * Make sure we have everything set up correctly
  *********************************************************/
@@ -47,27 +52,14 @@
 // Make sure our dependencies are available, and install them if they
 // aren't
 
-function runNpm(command) {
+try {
+	require.resolve('sockjs');
+} catch (e) {
 	if (require.main !== module) throw new Error("Dependencies unmet");
 
-	command = 'npm ' + command + ' && ' + process.execPath + ' app.js';
-	console.log('Running `' + command + '`...');
-	require('child_process').spawn('sh', ['-c', command], {stdio: 'inherit', detached: true});
-	process.exit(0);
-}
-
-var isLegacyEngine = !(''.includes);
-
-var fs = require('fs');
-var path = require('path');
-try {
-	require('sugar');
-	if (isLegacyEngine) require('es6-shim');
-} catch (e) {
-	runNpm('install --production');
-}
-if (isLegacyEngine && !(''.includes)) {
-	runNpm('update --production');
+	let command = 'npm install --production';
+	console.log('Installing dependencies: `' + command + '`...');
+	require('child_process').spawnSync('sh', ['-c', command], {stdio: 'inherit'});
 }
 
 /*********************************************************
@@ -75,304 +67,76 @@ if (isLegacyEngine && !(''.includes)) {
  *********************************************************/
 
 try {
-	global.Config = require('./config/config.js');
+	require.resolve('./config/config');
 } catch (err) {
-	if (err.code !== 'MODULE_NOT_FOUND') throw err;
+	if (err.code !== 'MODULE_NOT_FOUND') throw err; // should never happen
 
 	// Copy it over synchronously from config-example.js since it's needed before we can start the server
 	console.log("config.js doesn't exist - creating one with default settings...");
 	fs.writeFileSync(path.resolve(__dirname, 'config/config.js'),
 		fs.readFileSync(path.resolve(__dirname, 'config/config-example.js'))
 	);
-	global.Config = require('./config/config.js');
+} finally {
+	global.Config = require('./config/config');
 }
 
 if (Config.watchconfig) {
-	fs.watchFile(path.resolve(__dirname, 'config/config.js'), function (curr, prev) {
+	let configPath = require.resolve('./config/config');
+	fs.watchFile(configPath, (curr, prev) => {
 		if (curr.mtime <= prev.mtime) return;
 		try {
-			delete require.cache[require.resolve('./config/config.js')];
-			global.Config = require('./config/config.js');
+			delete require.cache[configPath];
+			global.Config = require('./config/config');
 			if (global.Users) Users.cacheGroupData();
 			console.log('Reloaded config/config.js');
-		} catch (e) {}
+		} catch (e) {
+			console.log('Error reloading config/config.js: ' + e.stack);
+		}
 	});
 }
-
-// Autoconfigure the app when running in cloud hosting environments:
-try {
-	var cloudenv = require('cloud-env');
-	Config.bindaddress = cloudenv.get('IP', Config.bindaddress || '');
-	Config.port = cloudenv.get('PORT', Config.port);
-} catch (e) {}
-
-if (require.main === module && process.argv[2] && parseInt(process.argv[2])) {
-	Config.port = parseInt(process.argv[2]);
-	Config.ssl = null;
-}
-
-global.ResourceMonitor = {
-	connections: {},
-	connectionTimes: {},
-	battles: {},
-	battleTimes: {},
-	battlePreps: {},
-	battlePrepTimes: {},
-	groupChats: {},
-	groupChatTimes: {},
-	networkUse: {},
-	networkCount: {},
-	cmds: {},
-	cmdsTimes: {},
-	cmdsTotal: {lastCleanup: Date.now(), count: 0},
-	teamValidatorChanged: 0,
-	teamValidatorUnchanged: 0,
-	/**
-	 * Counts a connection. Returns true if the connection should be terminated for abuse.
-	 */
-	log: function (text) {
-		console.log(text);
-		if (Rooms.get('staff')) {
-			Rooms.get('staff').add('|c|~|' + text).update();
-		}
-	},
-	adminlog: function (text) {
-		console.log(text);
-		if (Rooms.get('upperstaff')) {
-			Rooms.get('upperstaff').add('|c|~|' + text).update();
-		}
-	},
-	logHTML: function (text) {
-		console.log(text);
-		if (Rooms.get('staff')) {
-			Rooms.get('staff').add('|html|' + text).update();
-		}
-	},
-	countConnection: function (ip, name) {
-		var now = Date.now();
-		var duration = now - this.connectionTimes[ip];
-		name = (name ? ': ' + name : '');
-		if (ip in this.connections && duration < 30 * 60 * 1000) {
-			this.connections[ip]++;
-			if (this.connections[ip] === 500) {
-				this.adminlog('[ResourceMonitor] IP ' + ip + ' has been banned for connection flooding (' + this.connections[ip] + ' times in the last ' + duration.duration() + name + ')');
-				return true;
-			} else if (this.connections[ip] > 500) {
-				if (this.connections[ip] % 500 === 0) {
-					var c = this.connections[ip] / 500;
-					if (c < 5 || c % 2 === 0 && c < 10 || c % 5 === 0) {
-						this.adminlog('[ResourceMonitor] Banned IP ' + ip + ' has connected ' + this.connections[ip] + ' times in the last ' + duration.duration() + name);
-					}
-				}
-				return true;
-			}
-		} else {
-			this.connections[ip] = 1;
-			this.connectionTimes[ip] = now;
-		}
-	},
-	/**
-	 * Counts a battle. Returns true if the connection should be terminated for abuse.
-	 */
-	countBattle: function (ip, name) {
-		var now = Date.now();
-		var duration = now - this.battleTimes[ip];
-		name = (name ? ': ' + name : '');
-		if (ip in this.battles && duration < 30 * 60 * 1000) {
-			this.battles[ip]++;
-			if (duration < 5 * 60 * 1000 && this.battles[ip] % 15 === 0) {
-				this.log('[ResourceMonitor] IP ' + ip + ' has battled ' + this.battles[ip] + ' times in the last ' + duration.duration() + name);
-			} else if (this.battles[ip] % 75 === 0) {
-				this.log('[ResourceMonitor] IP ' + ip + ' has battled ' + this.battles[ip] + ' times in the last ' + duration.duration() + name);
-			}
-		} else {
-			this.battles[ip] = 1;
-			this.battleTimes[ip] = now;
-		}
-	},
-	/**
-	 * Counts battle prep. Returns true if too much
-	 */
-	countPrepBattle: function (ip) {
-		var now = Date.now();
-		var duration = now - this.battlePrepTimes[ip];
-		if (ip in this.battlePreps && duration < 3 * 60 * 1000) {
-			this.battlePreps[ip]++;
-			if (this.battlePreps[ip] > 6) {
-				return true;
-			}
-		} else {
-			this.battlePreps[ip] = 1;
-			this.battlePrepTimes[ip] = now;
-		}
-	},
-	/**
-	 * Counts group chat creation. Returns true if too much.
-	 */
-	countGroupChat: function (ip) {
-		var now = Date.now();
-		var duration = now - this.groupChatTimes[ip];
-		if (ip in this.groupChats && duration < 60 * 60 * 1000) {
-			this.groupChats[ip]++;
-			if (this.groupChats[ip] > 4) {
-				return true;
-			}
-		} else {
-			this.groupChats[ip] = 1;
-			this.groupChatTimes[ip] = now;
-		}
-	},
-	/**
-	 * data
-	 */
-	countNetworkUse: function (size) {
-		if (this.activeIp in this.networkUse) {
-			this.networkUse[this.activeIp] += size;
-			this.networkCount[this.activeIp]++;
-		} else {
-			this.networkUse[this.activeIp] = size;
-			this.networkCount[this.activeIp] = 1;
-		}
-	},
-	writeNetworkUse: function () {
-		var buf = '';
-		for (var i in this.networkUse) {
-			buf += '' + this.networkUse[i] + '\t' + this.networkCount[i] + '\t' + i + '\n';
-		}
-		fs.writeFile(path.resolve(__dirname, 'logs/networkuse.tsv'), buf);
-	},
-	clearNetworkUse: function () {
-		this.networkUse = {};
-		this.networkCount = {};
-	},
-	/**
-	 * Counts roughly the size of an object to have an idea of the server load.
-	 */
-	sizeOfObject: function (object) {
-		var objectList = [];
-		var stack = [object];
-		var bytes = 0;
-
-		while (stack.length) {
-			var value = stack.pop();
-			if (typeof value === 'boolean') {
-				bytes += 4;
-			} else if (typeof value === 'string') {
-				bytes += value.length * 2;
-			} else if (typeof value === 'number') {
-				bytes += 8;
-			} else if (typeof value === 'object' && objectList.indexOf(value) < 0) {
-				objectList.push(value);
-				for (var i in value) stack.push(value[i]);
-			}
-		}
-
-		return bytes;
-	},
-	/**
-	 * Controls the amount of times a cmd command is used
-	 */
-	countCmd: function (ip, name) {
-		var now = Date.now();
-		var duration = now - this.cmdsTimes[ip];
-		name = (name ? ': ' + name : '');
-		if (!this.cmdsTotal) this.cmdsTotal = {lastCleanup: 0, count: 0};
-		if (now - this.cmdsTotal.lastCleanup > 60 * 1000) {
-			this.cmdsTotal.count = 0;
-			this.cmdsTotal.lastCleanup = now;
-		}
-		this.cmdsTotal.count++;
-		if (ip in this.cmds && duration < 60 * 1000) {
-			this.cmds[ip]++;
-			if (duration < 60 * 1000 && this.cmds[ip] % 5 === 0) {
-				if (this.cmds[ip] >= 3) {
-					if (this.cmds[ip] % 30 === 0) this.log('CMD command from ' + ip + ' blocked for ' + this.cmds[ip] + 'th use in the last ' + duration.duration() + name);
-					return true;
-				}
-				this.log('[ResourceMonitor] IP ' + ip + ' has used CMD command ' + this.cmds[ip] + ' times in the last ' + duration.duration() + name);
-			} else if (this.cmds[ip] % 15 === 0) {
-				this.log('CMD command from ' + ip + ' blocked for ' + this.cmds[ip] + 'th use in the last ' + duration.duration() + name);
-				return true;
-			}
-		} else if (this.cmdsTotal.count > 8000) {
-			// One CMD check per user per minute on average (to-do: make this better)
-			this.log('CMD command for ' + ip + ' blocked because CMD has been used ' + this.cmdsTotal.count + ' times in the last minute.');
-			return true;
-		} else {
-			this.cmds[ip] = 1;
-			this.cmdsTimes[ip] = now;
-		}
-	}
-};
 
 /*********************************************************
  * Set up most of our globals
  *********************************************************/
 
-/**
- * Converts anything to an ID. An ID must have only lowercase alphanumeric
- * characters.
- * If a string is passed, it will be converted to lowercase and
- * non-alphanumeric characters will be stripped.
- * If an object with an ID is passed, its ID will be returned.
- * Otherwise, an empty string will be returned.
- */
-global.toId = function (text) {
-	if (text && text.id) {
-		text = text.id;
-	} else if (text && text.userid) {
-		text = text.userid;
-	}
-	if (typeof text !== 'string' && typeof text !== 'number') return '';
-	return ('' + text).toLowerCase().replace(/[^a-z0-9]+/g, '');
-};
+global.Monitor = require('./monitor');
 
-global.Tools = require('./tools.js').includeFormats();
+global.Tools = require('./tools');
+global.toId = Tools.getId;
 
-global.LoginServer = require('./loginserver.js');
+global.LoginServer = require('./loginserver');
 
-global.Ladders = require(Config.remoteladder ? './ladders-remote.js' : './ladders.js');
+global.Ladders = require(Config.remoteladder ? './ladders-remote' : './ladders');
 
-global.Users = require('./users.js');
+global.Users = require('./users');
 
-global.Rooms = require('./rooms.js');
+global.Punishments = require('./punishments');
 
-// Generate and cache the format list.
-Rooms.global.formatListText = Rooms.global.getFormatListText();
+global.Chat = require('./chat');
 
+global.Rooms = require('./rooms');
 
 delete process.send; // in case we're a child process
-global.Verifier = require('./verifier.js');
-
-global.CommandParser = require('./command-parser.js');
-
-global.Simulator = require('./simulator.js');
+global.Verifier = require('./verifier');
+Verifier.PM.spawn();
 
 global.Tournaments = require('./tournaments');
 
-try {
-	global.Dnsbl = require('./dnsbl.js');
-} catch (e) {
-	global.Dnsbl = {query:function () {}};
-}
-
-global.Cidr = require('./cidr.js');
+global.Dnsbl = require('./dnsbl');
+Dnsbl.loadDatacenters();
 
 if (Config.crashguard) {
 	// graceful crash - allow current battles to finish before restarting
-	var lastCrash = 0;
-	process.on('uncaughtException', function (err) {
-		var dateNow = Date.now();
-		var quietCrash = require('./crashlogger.js')(err, 'The main process', true);
-		quietCrash = quietCrash || ((dateNow - lastCrash) <= 1000 * 60 * 5);
-		lastCrash = Date.now();
-		if (quietCrash) return;
-		var stack = ("" + err.stack).escapeHTML().split("\n").slice(0, 2).join("<br />");
-		if (Rooms.lobby) {
-			Rooms.lobby.addRaw('<div class="broadcast-red"><b>THE SERVER HAS CRASHED:</b> ' + stack + '<br />Please restart the server.</div>');
-			Rooms.lobby.addRaw('<div class="broadcast-red">You will not be able to talk in the lobby or start new battles until the server restarts.</div>');
+	process.on('uncaughtException', err => {
+		let crashType = require('./crashlogger')(err, 'The main process');
+		if (crashType === 'lockdown') {
+			Rooms.global.startLockdown(err);
+		} else {
+			Rooms.global.reportCrash(err);
 		}
-		Rooms.global.lockdown = true;
+	});
+	process.on('unhandledRejection', err => {
+		throw err;
 	});
 }
 
@@ -380,33 +144,34 @@ if (Config.crashguard) {
  * Start networking processes to be connected to
  *********************************************************/
 
-global.Sockets = require('./sockets.js');
+global.Sockets = require('./sockets');
+
+exports.listen = function (port, bindAddress, workerCount) {
+	Sockets.listen(port, bindAddress, workerCount);
+};
+
+if (require.main === module) {
+	// if running with node app.js, set up the server directly
+	// (otherwise, wait for app.listen())
+	let port;
+	if (process.argv[2]) {
+		port = parseInt(process.argv[2]); // eslint-disable-line radix
+	}
+	Sockets.listen(port);
+}
 
 /*********************************************************
  * Set up our last global
  *********************************************************/
 
-global.TeamValidator = require('./team-validator.js');
+// Generate and cache the format list.
+Tools.includeFormats();
 
-// load ipbans at our leisure
-fs.readFile(path.resolve(__dirname, 'config/ipbans.txt'), function (err, data) {
-	if (err) return;
-	data = ('' + data).split("\n");
-	var rangebans = [];
-	for (var i = 0; i < data.length; i++) {
-		data[i] = data[i].split('#')[0].trim();
-		if (!data[i]) continue;
-		if (data[i].includes('/')) {
-			rangebans.push(data[i]);
-		} else if (!Users.bannedIps[data[i]]) {
-			Users.bannedIps[data[i]] = '#ipban';
-		}
-	}
-	Users.checkRangeBanned = Cidr.checker(rangebans);
-});
+global.TeamValidator = require('./team-validator');
+TeamValidator.PM.spawn();
 
 /*********************************************************
  * Start up the REPL server
  *********************************************************/
 
-require('./repl.js').start('app', function (cmd) { return eval(cmd); });
+require('./repl').start('app', cmd => eval(cmd));

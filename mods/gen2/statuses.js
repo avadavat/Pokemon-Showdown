@@ -1,15 +1,18 @@
+'use strict';
+
 exports.BattleStatuses = {
 	brn: {
 		effectType: 'Status',
 		onStart: function (target) {
 			this.add('-status', target, 'brn');
 		},
+		onAfterMoveSelfPriority: 3,
 		onAfterMoveSelf: function (pokemon) {
 			this.damage(pokemon.maxhp / 8);
 		},
 		onAfterSwitchInSelf: function (pokemon) {
 			this.damage(pokemon.maxhp / 8);
-		}
+		},
 	},
 	par: {
 		inherit: true,
@@ -19,7 +22,7 @@ exports.BattleStatuses = {
 				this.add('cant', pokemon.id, 'par');
 				return false;
 			}
-		}
+		},
 	},
 	slp: {
 		effectType: 'Status',
@@ -40,7 +43,7 @@ exports.BattleStatuses = {
 				return;
 			}
 			return false;
-		}
+		},
 	},
 	frz: {
 		inherit: true,
@@ -55,19 +58,20 @@ exports.BattleStatuses = {
 		},
 		onResidual: function (pokemon) {
 			if (this.random(256) < 25) pokemon.cureStatus();
-		}
+		},
 	},
 	psn: {
 		effectType: 'Status',
 		onStart: function (target) {
 			this.add('-status', target, 'psn');
 		},
+		onAfterMoveSelfPriority: 3,
 		onAfterMoveSelf: function (pokemon) {
 			this.damage(pokemon.maxhp / 8);
 		},
 		onAfterSwitchInSelf: function (pokemon) {
 			this.damage(pokemon.maxhp / 8);
-		}
+		},
 	},
 	tox: {
 		effectType: 'Status',
@@ -75,6 +79,7 @@ exports.BattleStatuses = {
 			this.add('-status', target, 'tox');
 			this.effectData.stage = 0;
 		},
+		onAfterMoveSelfPriority: 3,
 		onAfterMoveSelf: function (pokemon) {
 			if (this.effectData.stage < 15) {
 				this.effectData.stage++;
@@ -88,13 +93,11 @@ exports.BattleStatuses = {
 		},
 		onAfterSwitchInSelf: function (pokemon) {
 			this.damage(this.clampIntRange(Math.floor(pokemon.maxhp / 16), 1));
-		}
+		},
 	},
 	confusion: {
 		inherit: true,
 		onStart: function (target, source, sourceEffect) {
-			var result = this.runEvent('TryConfusion', target, source, sourceEffect);
-			if (!result) return result;
 			if (sourceEffect && sourceEffect.id === 'lockedmove') {
 				this.add('-start', target, 'confusion', '[silent]');
 			} else {
@@ -118,13 +121,13 @@ exports.BattleStatuses = {
 			}
 			this.directDamage(this.getDamage(pokemon, pokemon, 40));
 			return false;
-		}
+		},
 	},
 	partiallytrapped: {
 		inherit: true,
 		durationCallback: function (target, source) {
 			return this.random(3, 6);
-		}
+		},
 	},
 	lockedmove: {
 		// Outrage, Thrash, Petal Dance...
@@ -149,37 +152,32 @@ exports.BattleStatuses = {
 			return this.effectData.move;
 		},
 		onBeforeTurn: function (pokemon) {
-			var move = this.getMove(this.effectData.move);
+			let move = this.getMove(this.effectData.move);
 			if (move.id) {
 				this.debug('Forcing into ' + move.id);
 				this.changeDecision(pokemon, {move: move.id});
 			}
-		}
+		},
 	},
 	sandstorm: {
 		inherit: true,
 		onWeather: function (target) {
 			this.damage(target.maxhp / 8);
-		}
+		},
 	},
 	stall: {
 		duration: 2,
-		counterMax: 255,
 		onStart: function () {
-			this.effectData.counter = 255;
+			this.effectData.counter = 127;
 		},
 		onStallMove: function () {
-			// Gen 2 starts counting at x=255, x/256 and then halves x on every turn
-			var counter = this.effectData.counter || 255;
-			this.debug("Success chance: " + Math.round(counter / 256) + "% (" + counter + "/256)");
-			return (this.random(counter) === 0);
+			let counter = Math.floor(this.effectData.counter) || 127;
+			this.debug("Success chance: " + Math.round(counter * 1000 / 255) / 10 + "% (" + counter + "/255)");
+			return (this.random(255) < counter);
 		},
 		onRestart: function () {
-			if (this.effectData.counter > this.effect.counterMax) {
-				this.effectData.counter /= 2;
-				if (this.effectData.counter < 0) this.effectData.counter = 0;
-			}
-			this.effectData.duration = 255;
-		}
-	}
+			this.effectData.counter /= 2;
+			this.effectData.duration = 2;
+		},
+	},
 };
