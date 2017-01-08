@@ -193,7 +193,10 @@ class BattlePokemon {
 			this.hpPower = (this.battle.gen && this.battle.gen < 6) ? Math.floor(hpPowerX * 40 / 63) + 30 : 60;
 		}
 		if (this.battle.gen >= 7 && desiredHPType) {
-			this.hpType = desiredHPType;
+			const format = this.battle.getFormat();
+			if (this.level === 100 || this.level === format.forcedLevel || this.level === format.maxForcedLevel || format.team) {
+				this.hpType = desiredHPType;
+			}
 		}
 
 		this.boosts = {atk: 0, def: 0, spa: 0, spd: 0, spe: 0, accuracy: 0, evasion: 0};
@@ -412,10 +415,10 @@ class BattlePokemon {
 		return targets;
 	}
 	ignoringAbility() {
-		return !!((this.battle.gen >= 5 && !this.isActive) || this.volatiles['gastroacid']);
+		return !!((this.battle.gen >= 5 && !this.isActive) || (this.volatiles['gastroacid'] && !(this.ability in {comatose:1, multitype:1, schooling:1, stancechange:1})));
 	}
 	ignoringItem() {
-		return !!((this.battle.gen >= 5 && !this.isActive) || this.hasAbility('klutz') || this.volatiles['embargo'] || this.battle.pseudoWeather['magicroom']);
+		return !!((this.battle.gen >= 5 && !this.isActive) || (this.hasAbility('klutz') && !this.getItem().ignoreKlutz) || this.volatiles['embargo'] || this.battle.pseudoWeather['magicroom']);
 	}
 	deductPP(move, amount, source) {
 		move = this.battle.getMove(move);
@@ -440,8 +443,9 @@ class BattlePokemon {
 		this.isStalePPTurns = 0;
 		return true;
 	}
-	moveUsed(move) {
+	moveUsed(move, targetLoc) {
 		this.lastMove = this.battle.getMove(move).id;
+		this.lastMoveTargetLoc = targetLoc;
 		this.moveThisTurn = this.lastMove;
 	}
 	gotAttacked(move, damage, source) {
@@ -967,7 +971,7 @@ class BattlePokemon {
 		return false;
 	}
 	useItem(item, source, sourceEffect) {
-		if (!this.isActive) return false;
+		if (!this.hp || !this.isActive) return false;
 		if (!this.item) return false;
 
 		let id = toId(item);
@@ -1097,6 +1101,7 @@ class BattlePokemon {
 		let result;
 		status = this.battle.getEffect(status);
 		if (!this.hp && !status.affectsFainted) return false;
+		if (linkedStatus && !source.hp) return false;
 		if (this.battle.event) {
 			if (!source) source = this.battle.event.source;
 			if (!sourceEffect) sourceEffect = this.battle.effect;
@@ -1477,7 +1482,7 @@ class BattleSide {
 		return this.choiceData.choices.length >= this.active.length;
 	}
 	chooseMove(data, targetLoc, megaOrZ, dontPlay) {
-		if (megaOrZ === true) megaOrZ = ' mega';
+		if (megaOrZ === true) megaOrZ = 'mega';
 		if (!targetLoc) targetLoc = 0;
 		const activePokemon = this.active[this.choiceData.choices.length];
 
@@ -1516,6 +1521,25 @@ class BattleSide {
 			}
 		}
 
+		let move = this.battle.getMove(moveid);
+		let zMove = megaOrZ === 'zmove' ? this.battle.getZMove(move, activePokemon) : undefined;
+		if (megaOrZ === 'zmove') {
+			if (!zMove || this.choiceData.zmove) {
+				this.emitCallback('cantz', activePokemon); // TODO: The client shouldn't have sent this request in the first place.
+				this.battle.debug(`Can't use an unexpected z-move`);
+				return false;
+			}
+
+			targetType = this.battle.getMove(zMove).target;
+
+			if (!targetLoc && this.active.length >= 2 && this.battle.targetTypeChoices(targetType)) {
+				// Compatibility fix:
+				// Clients failed to select a target for Z-Moves based on spread moves
+				// in the early stages of Gen 7 implementation.
+				targetLoc = 1;
+			}
+		}
+
 		/**
 		 * Validate targetting
 		 */
@@ -1540,17 +1564,19 @@ class BattleSide {
 		/**
 		 *  Check whether the chosen move is really valid, accounting for
 		 *  effects active in battle which could be unknown for the client.
+		 *  Note that a Z-Move cannot be disabled.
+		 *
 		 *  Upon reaching this stage, if a new decision is required, a server
 		 *  reply is mandatory.
 		 */
 
 		const moves = activePokemon.getMoves();
-		if (!moves.length) {
+		if (!moves.length && !zMove) {
 			// Override decision and use Struggle if there are no enabled moves with PP
 			// Gen 4 and earlier announce a Pokemon has no moves left before the turn begins, and only to that player's side.
 			if (this.gen <= 4) this.send('-activate', activePokemon, 'move: Struggle');
 			moveid = 'struggle';
-		} else {
+		} else if (!zMove) {
 			// At least a move is valid. Check if the chosen one is.
 			// This may include Struggle in Hackmons.
 			let isEnabled = false;
@@ -1574,7 +1600,7 @@ class BattleSide {
 
 		const decision = [];
 
-		if (megaOrZ === ' mega') {
+		if (megaOrZ === 'mega') {
 			if (!activePokemon.canMegaEvo || this.choiceData.mega) {
 				this.emitCallback('cantmega', activePokemon); // TODO: The client shouldn't have sent this request in the first place.
 				this.battle.debug(`Can't issue more than one Mega-Evolution command`);
@@ -1587,12 +1613,6 @@ class BattleSide {
 				choice: 'megaEvo',
 				pokemon: activePokemon,
 			});
-		} else if (megaOrZ === ' zmove') {
-			if (this.zMoveUsed || this.choiceData.zmove) {
-				this.emitCallback('cantz', activePokemon); // TODO: The client shouldn't have sent this request in the first place.
-				this.battle.debug(`Can't issue more than one Z-Move command`);
-				return false;
-			}
 		}
 
 		decision.push({
@@ -1600,11 +1620,11 @@ class BattleSide {
 			pokemon: activePokemon,
 			targetLoc: targetLoc,
 			move: moveid,
-			mega: megaOrZ === ' mega',
-			zmove: megaOrZ === ' zmove',
+			mega: megaOrZ === 'mega',
+			zmove: zMove,
 		});
 
-		this.choiceData.choices.push('move ' + moveid + (targetLoc ? ' ' + targetLoc : '') + (megaOrZ || ''));
+		this.choiceData.choices.push('move ' + moveid + (targetLoc ? ' ' + targetLoc : '') + (megaOrZ ? ' ' + megaOrZ : ''));
 		this.choiceData.decisions.push(decision);
 
 		if (activePokemon.maybeDisabled) {
@@ -1612,8 +1632,8 @@ class BattleSide {
 		}
 
 		if (megaOrZ) {
-			if (megaOrZ === ' mega') this.choiceData.mega = (this.choiceData.mega || 0) + 1;
-			if (megaOrZ === ' zmove') this.choiceData.zmove = (this.choiceData.zmove || 0) + 1;
+			if (megaOrZ === 'mega') this.choiceData.mega = (this.choiceData.mega || 0) + 1;
+			if (megaOrZ === 'zmove') this.choiceData.zmove = (this.choiceData.zmove || 0) + 1;
 		}
 
 		if (!dontPlay && !this.battle.checkDecisions()) return this; // allow chaining
@@ -2296,7 +2316,7 @@ class Battle extends Tools.BattleDex {
 		return true;
 	}
 	suppressingAttackEvents() {
-		return (this.activePokemon && this.activePokemon.isActive && (!this.activePokemon.ignoringAbility() && this.activePokemon.getAbility().stopAttackEvents) || (this.activeMove && this.activeMove.ignoreAbility));
+		return this.activePokemon && this.activePokemon.isActive && this.activeMove && this.activeMove.ignoreAbility;
 	}
 	suppressingWeather() {
 		let pokemon;
@@ -3929,7 +3949,7 @@ class Battle extends Tools.BattleDex {
 		baseDamage = this.runEvent('ModifyDamage', pokemon, target, move, baseDamage);
 
 		// TODO: Find out where this actually goes in the damage calculation
-		if (move.isZ && (target.volatiles['banefulbunker'] || target.volatiles['kingsshield'] || target.volatiles['protect'] || target.volatiles['spikyshield'])) {
+		if (move.isZ && (move.zBrokeProtect || target.volatiles['banefulbunker'] || target.volatiles['kingsshield'] || target.side.sideConditions['matblock'] || target.volatiles['protect'] || target.volatiles['spikyshield'])) {
 			baseDamage = this.modify(baseDamage, 0.25);
 			this.add('-message', target.name + " couldn't fully protect itself and got hurt! (placeholder)");
 		}
@@ -3980,33 +4000,28 @@ class Battle extends Tools.BattleDex {
 	validTarget(target, source, targetType) {
 		return this.validTargetLoc(this.getTargetLoc(target, source), source, targetType);
 	}
-	getTarget(decision) {
-		let move = this.getMove(decision.move);
+	getTarget(pokemon, move, targetLoc) {
+		move = this.getMove(move);
 		let target;
 		if ((move.target !== 'randomNormal') &&
-				this.validTargetLoc(decision.targetLoc, decision.pokemon, move.target)) {
-			if (decision.targetLoc > 0) {
-				target = decision.pokemon.side.foe.active[decision.targetLoc - 1];
+				this.validTargetLoc(targetLoc, pokemon, move.target)) {
+			if (targetLoc > 0) {
+				target = pokemon.side.foe.active[targetLoc - 1];
 			} else {
-				target = decision.pokemon.side.active[-decision.targetLoc - 1];
+				target = pokemon.side.active[-targetLoc - 1];
 			}
 			if (target) {
 				if (!target.fainted) {
 					// target exists and is not fainted
 					return target;
-				} else if (target.side === decision.pokemon.side) {
+				} else if (target.side === pokemon.side) {
 					// fainted allied targets don't retarget
 					return false;
 				}
 			}
 			// chosen target not valid, retarget randomly with resolveTarget
 		}
-		if (!decision.targetPosition || !decision.targetSide) {
-			target = this.resolveTarget(decision.pokemon, decision.move);
-			decision.targetSide = target.side;
-			decision.targetPosition = target.position;
-		}
-		return decision.targetSide.active[decision.targetPosition];
+		return this.resolveTarget(pokemon, move);
 	}
 	resolveTarget(pokemon, move) {
 		// A move was used without a chosen target
@@ -4110,30 +4125,32 @@ class Battle extends Tools.BattleDex {
 		}
 		return false;
 	}
-	resolvePriority(decision) {
-		if (decision) {
-			if (!decision.side && decision.pokemon) decision.side = decision.pokemon.side;
-			if (!decision.choice && decision.move) decision.choice = 'move';
-			if (!decision.priority && decision.priority !== 0) {
-				let priorities = {
-					'beforeTurn': 100,
-					'beforeTurnMove': 99,
-					'switch': 7,
-					'runUnnerve': 7.3,
-					'runSwitch': 7.2,
-					'runPrimal': 7.1,
-					'instaswitch': 101,
-					'megaEvo': 6.9,
-					'residual': -100,
-					'team': 102,
-					'start': 101,
-				};
-				if (decision.choice in priorities) {
-					decision.priority = priorities[decision.choice];
-				}
+	resolvePriority(decision, midTurn) {
+		if (!decision) return;
+
+		if (!decision.side && decision.pokemon) decision.side = decision.pokemon.side;
+		if (!decision.choice && decision.move) decision.choice = 'move';
+		if (!decision.priority && decision.priority !== 0) {
+			let priorities = {
+				'beforeTurn': 100,
+				'beforeTurnMove': 99,
+				'switch': 7,
+				'runUnnerve': 7.3,
+				'runSwitch': 7.2,
+				'runPrimal': 7.1,
+				'instaswitch': 101,
+				'megaEvo': 6.9,
+				'residual': -100,
+				'team': 102,
+				'start': 101,
+			};
+			if (decision.choice in priorities) {
+				decision.priority = priorities[decision.choice];
 			}
+		}
+		if (!midTurn) {
 			if (decision.choice === 'move') {
-				if (this.getMove(decision.move).beforeTurnCallback) {
+				if (!decision.zmove && this.getMove(decision.move).beforeTurnCallback) {
 					this.addQueue({choice: 'beforeTurnMove', pokemon: decision.pokemon, move: decision.move, targetLoc: decision.targetLoc});
 				}
 			} else if (decision.choice === 'switch' || decision.choice === 'instaswitch') {
@@ -4143,37 +4160,36 @@ class Battle extends Tools.BattleDex {
 				decision.pokemon.switchFlag = false;
 				if (!decision.speed && decision.pokemon && decision.pokemon.isActive) decision.speed = decision.pokemon.getDecisionSpeed();
 			}
-
-			let deferPriority = this.gen >= 7 && decision.mega && !decision.pokemon.template.isMega;
-			if (decision.move) {
-				let target;
-
-				if (!decision.targetPosition) {
-					target = this.resolveTarget(decision.pokemon, decision.move);
-					decision.targetSide = target.side;
-					decision.targetPosition = target.position;
-				}
-
-				decision.move = this.getMoveCopy(decision.move);
-				if (!decision.priority && !deferPriority) {
-					let priority = decision.move.priority;
-					if (decision.zmove) {
-						let zMoveName = this.getZMove(decision.move, decision.pokemon, true);
-						let zMove = this.getMove(zMoveName);
-						if (zMove.exists) {
-							priority = zMove.priority;
-						}
-					}
-					priority = this.runEvent('ModifyPriority', decision.pokemon, target, decision.move, priority);
-					decision.priority = priority;
-					// In Gen 6, Quick Guard blocks moves with artificially enhanced priority.
-					if (this.gen > 5) decision.move.priority = priority;
-				}
-			}
-			if (!decision.pokemon && !decision.speed) decision.speed = 1;
-			if (!decision.speed && (decision.choice === 'switch' || decision.choice === 'instaswitch') && decision.target) decision.speed = decision.target.getDecisionSpeed();
-			if (!decision.speed && !deferPriority) decision.speed = decision.pokemon.getDecisionSpeed();
 		}
+
+		let deferPriority = this.gen >= 7 && decision.mega && !decision.pokemon.template.isMega;
+		if (decision.move) {
+			let target;
+
+			if (!decision.targetLoc) {
+				target = this.resolveTarget(decision.pokemon, decision.move);
+				decision.targetLoc = this.getTargetLoc(target, decision.pokemon);
+			}
+
+			decision.move = this.getMoveCopy(decision.move);
+			if (!decision.priority && !deferPriority) {
+				let priority = decision.move.priority;
+				if (decision.zmove) {
+					let zMoveName = this.getZMove(decision.move, decision.pokemon, true);
+					let zMove = this.getMove(zMoveName);
+					if (zMove.exists) {
+						priority = zMove.priority;
+					}
+				}
+				priority = this.runEvent('ModifyPriority', decision.pokemon, target, decision.move, priority);
+				decision.priority = priority;
+				// In Gen 6, Quick Guard blocks moves with artificially enhanced priority.
+				if (this.gen > 5) decision.move.priority = priority;
+			}
+		}
+		if (!decision.pokemon && !decision.speed) decision.speed = 1;
+		if (!decision.speed && (decision.choice === 'switch' || decision.choice === 'instaswitch') && decision.target) decision.speed = decision.target.getDecisionSpeed();
+		if (!decision.speed && !deferPriority) decision.speed = decision.pokemon.getDecisionSpeed();
 	}
 	addQueue(decision) {
 		if (Array.isArray(decision)) {
@@ -4189,7 +4205,7 @@ class Battle extends Tools.BattleDex {
 	sortQueue() {
 		this.queue.sort(Battle.comparePriority);
 	}
-	insertQueue(decision) {
+	insertQueue(decision, midTurn) {
 		if (Array.isArray(decision)) {
 			for (let i = 0; i < decision.length; i++) {
 				this.insertQueue(decision[i]);
@@ -4198,7 +4214,7 @@ class Battle extends Tools.BattleDex {
 		}
 
 		if (decision.pokemon) decision.pokemon.updateSpeed();
-		this.resolvePriority(decision);
+		this.resolvePriority(decision, midTurn);
 		for (let i = 0; i < this.queue.length; i++) {
 			if (Battle.comparePriority(decision, this.queue[i]) < 0) {
 				this.queue.splice(i, 0, decision);
@@ -4306,11 +4322,7 @@ class Battle extends Tools.BattleDex {
 		case 'move':
 			if (!decision.pokemon.isActive) return false;
 			if (decision.pokemon.fainted) return false;
-			if (decision.zmove) {
-				this.runZMove(decision.move, decision.pokemon, this.getTarget(decision), decision.sourceEffect);
-			} else {
-				this.runMove(decision.move, decision.pokemon, this.getTarget(decision), decision.sourceEffect);
-			}
+			this.runMove(decision.move, decision.pokemon, decision.targetLoc, decision.sourceEffect, decision.zmove);
 			break;
 		case 'megaEvo':
 			this.runMegaEvo(decision.pokemon);
@@ -4319,7 +4331,7 @@ class Battle extends Tools.BattleDex {
 			if (!decision.pokemon.isActive) return false;
 			if (decision.pokemon.fainted) return false;
 			this.debug('before turn callback: ' + decision.move.id);
-			let target = this.getTarget(decision);
+			let target = this.getTarget(decision.pokemon, decision.move, decision.targetLoc);
 			if (!target) return false;
 			decision.move.beforeTurnCallback.call(this, decision.pokemon, target);
 			break;
@@ -4441,6 +4453,7 @@ class Battle extends Tools.BattleDex {
 			this.clearActiveMove(true);
 			this.updateSpeed();
 			this.residualEvent('Residual');
+			this.add('upkeep');
 			break;
 
 		case 'skip':
@@ -4485,7 +4498,7 @@ class Battle extends Tools.BattleDex {
 			const moveIndex = this.queue.findIndex(queuedDecision => queuedDecision.pokemon === decision.pokemon && queuedDecision.choice === 'move');
 			if (moveIndex >= 0) {
 				const moveDecision = this.queue.splice(moveIndex, 1)[0];
-				this.insertQueue(moveDecision);
+				this.insertQueue(moveDecision, true);
 			}
 			return false;
 		}
@@ -4644,9 +4657,9 @@ class Battle extends Tools.BattleDex {
 					targetLoc = parseInt(data.slice(-2));
 					data = data.slice(0, data.lastIndexOf(' '));
 				}
-				let willMega = data.endsWith(' mega') ? ' mega' : '';
+				let willMega = data.endsWith(' mega') ? 'mega' : '';
 				if (willMega) data = data.slice(0, -5);
-				let willZ = data.endsWith(' zmove') ? ' zmove' : '';
+				let willZ = data.endsWith(' zmove') ? 'zmove' : '';
 				if (willZ) data = data.slice(0, -6);
 				let move = data; // `move` is expected to be either a one-based index or a move id
 				if (!side.chooseMove(move.trim(), targetLoc, willMega || willZ, true)) return side.undoChoices(i, choiceIndex);
