@@ -4,7 +4,18 @@ const CHOOSABLE_TARGETS = new Set(['normal', 'any', 'adjacentAlly', 'adjacentAll
 
 exports.BattleScripts = {
 	gen: 7,
-	runMove: function (move, pokemon, targetLoc, sourceEffect, zMove) {
+	/**
+	 * runMove is the "outside" move caller. It handles deducting PP,
+	 * flinching, full paralysis, etc. All the stuff up to and including
+	 * the "POKEMON used MOVE" message.
+	 *
+	 * For details of the difference between runMove and useMove, see
+	 * useMove's info.
+	 *
+	 * externalMove skips LockMove and PP deduction, mostly for use by
+	 * Dancer.
+	 */
+	runMove: function (move, pokemon, targetLoc, sourceEffect, zMove, externalMove) {
 		let target = this.getTarget(pokemon, zMove || move, targetLoc);
 		if (!sourceEffect && toId(move) !== 'struggle' && !zMove) {
 			let changedMove = this.runEvent('OverrideDecision', pokemon, target, move);
@@ -19,6 +30,7 @@ exports.BattleScripts = {
 
 		// copy the priority for Quick Guard
 		if (zMove) move.priority = baseMove.priority;
+		move.isExternal = externalMove;
 
 		this.setActiveMove(move, pokemon, target);
 
@@ -44,39 +56,65 @@ exports.BattleScripts = {
 			}
 		}
 		pokemon.lastDamage = 0;
-		let lockedMove = this.runEvent('LockMove', pokemon);
-		if (lockedMove === true) lockedMove = false;
-		if (!lockedMove) {
-			if (!pokemon.deductPP(baseMove, null, target) && (move.id !== 'struggle')) {
-				this.add('cant', pokemon, 'nopp', move);
-				let gameConsole = [null, 'Game Boy', 'Game Boy', 'Game Boy Advance', 'DS', 'DS'][this.gen] || '3DS';
-				this.add('-hint', "This is not a bug, this is really how it works on the " + gameConsole + "; try it yourself if you don't believe us.");
-				this.clearActiveMove(true);
-				return;
+		let lockedMove;
+		if (!externalMove) {
+			lockedMove = this.runEvent('LockMove', pokemon);
+			if (lockedMove === true) lockedMove = false;
+			if (!lockedMove) {
+				if (!pokemon.deductPP(baseMove, null, target) && (move.id !== 'struggle')) {
+					this.add('cant', pokemon, 'nopp', move);
+					let gameConsole = [null, 'Game Boy', 'Game Boy', 'Game Boy Advance', 'DS', 'DS'][this.gen] || '3DS';
+					this.add('-hint', "This is not a bug, this is really how it works on the " + gameConsole + "; try it yourself if you don't believe us.");
+					this.clearActiveMove(true);
+					return;
+				}
+			} else {
+				sourceEffect = this.getEffect('lockedmove');
 			}
-		} else {
-			sourceEffect = this.getEffect('lockedmove');
+			pokemon.moveUsed(move, targetLoc);
 		}
-		pokemon.moveUsed(move, targetLoc);
+
+		// Dancer Petal Dance hack
+		// TODO: implement properly
+		let noLock = externalMove && !pokemon.volatiles.lockedmove;
 
 		if (zMove) {
+			if (pokemon.illusion) {
+				this.singleEvent('End', this.getAbility('Illusion'), pokemon.abilityData, pokemon);
+			}
 			this.add('-zpower', pokemon);
 			pokemon.side.zMoveUsed = true;
 		}
 		this.useMove(baseMove, pokemon, target, sourceEffect, zMove);
 		this.singleEvent('AfterMove', move, null, pokemon, target, move);
 		this.runEvent('AfterMove', pokemon, target, move);
+		if (noLock && pokemon.volatiles.lockedmove) delete pokemon.volatiles.lockedmove;
 	},
+	/**
+	 * useMove is the "inside" move caller. It handles effects of the
+	 * move itself, but not the idea of using the move.
+	 *
+	 * Most caller effects, like Sleep Talk, Nature Power, Magic Bounce,
+	 * etc use useMove.
+	 *
+	 * The only ones that use runMove are Instruct, Pursuit, and
+	 * Dancer.
+	 */
 	useMove: function (move, pokemon, target, sourceEffect, zMove) {
 		if (!sourceEffect && this.effect.id) sourceEffect = this.effect;
-		if (zMove || (sourceEffect && sourceEffect.isZ)) {
+		if (zMove && move.id === 'weatherball') {
+			let baseMove = move;
+			this.singleEvent('ModifyMove', move, null, pokemon, target, move, move);
+			move = this.getZMoveCopy(move, pokemon);
+			if (move.type !== 'Normal') sourceEffect = baseMove;
+		} else if (zMove || (sourceEffect && sourceEffect.isZ)) {
 			move = this.getZMoveCopy(move, pokemon);
 		} else {
 			move = this.getMoveCopy(move);
 		}
 		if (this.activeMove) {
 			move.priority = this.activeMove.priority;
-			move.pranksterBoosted = this.activeMove.pranksterBoosted;
+			move.pranksterBoosted = move.hasBounced ? false : this.activeMove.pranksterBoosted;
 		}
 		let baseTarget = move.target;
 		if (!target && target !== false) target = this.resolveTarget(pokemon, move);
@@ -114,7 +152,7 @@ exports.BattleScripts = {
 		let movename = move.name;
 		if (move.id === 'hiddenpower') movename = 'Hidden Power';
 		if (sourceEffect) attrs += '|[from]' + this.getEffect(sourceEffect);
-		if (zMove && (move.category === 'Status')) {
+		if (zMove && move.isZ === true) {
 			attrs = '|[anim]' + movename + attrs;
 			movename = 'Z-' + movename;
 		}
@@ -158,7 +196,7 @@ exports.BattleScripts = {
 
 		let targets = pokemon.getMoveTargets(move, target);
 
-		if (!sourceEffect) {
+		if (!sourceEffect || sourceEffect.id === 'pursuit') {
 			let extraPP = 0;
 			for (let i = 0; i < targets.length; i++) {
 				let ppDrop = this.singleEvent('DeductPP', targets[i].getAbility(), targets[i].abilityData, targets[i], pokemon, move);
@@ -171,6 +209,10 @@ exports.BattleScripts = {
 			}
 		}
 
+		if (!this.singleEvent('TryMove', move, null, pokemon, target, move)) {
+			return true;
+		}
+
 		if (!this.runEvent('TryMove', pokemon, target, move)) {
 			return true;
 		}
@@ -181,14 +223,15 @@ exports.BattleScripts = {
 			move.ignoreImmunity = (move.category === 'Status');
 		}
 
+		if (move.selfdestruct === 'always') {
+			this.faint(pokemon, pokemon, move);
+		}
+
 		let damage = false;
 		if (move.target === 'all' || move.target === 'foeSide' || move.target === 'allySide' || move.target === 'allyTeam') {
 			damage = this.tryMoveHit(target, pokemon, move);
 			if (damage || damage === 0 || damage === undefined) moveResult = true;
 		} else if (move.target === 'allAdjacent' || move.target === 'allAdjacentFoes') {
-			if (move.selfdestruct) {
-				this.faint(pokemon, pokemon, move);
-			}
 			if (!targets.length) {
 				this.attrLastMove('[notarget]');
 				this.add('-notarget');
@@ -198,7 +241,7 @@ exports.BattleScripts = {
 			damage = 0;
 			let hitTargets = [];
 			for (let i = 0; i < targets.length; i++) {
-				let hitResult = this.tryMoveHit(targets[i], pokemon, move, true);
+				let hitResult = this.tryMoveHit(targets[i], pokemon, move);
 				if (hitResult || hitResult === 0 || hitResult === undefined) {
 					moveResult = true;
 					hitTargets.push(targets[i].toString().substr(0, 3));
@@ -206,7 +249,6 @@ exports.BattleScripts = {
 				damage += hitResult || 0;
 			}
 			if (move.spreadHit) this.attrLastMove('[spread] ' + hitTargets.join(','));
-			if (!pokemon.hp) pokemon.faint();
 		} else {
 			target = targets[0];
 			let lacksTarget = target.fainted;
@@ -215,7 +257,7 @@ exports.BattleScripts = {
 					lacksTarget = !this.isAdjacent(target, pokemon);
 				}
 			}
-			if (lacksTarget) {
+			if (lacksTarget && (!move.flags['charge'] || pokemon.volatiles['twoturnmove'])) {
 				this.attrLastMove('[notarget]');
 				this.add('-notarget');
 				if (move.target === 'normal') pokemon.isStaleCon = 0;
@@ -233,19 +275,13 @@ exports.BattleScripts = {
 			return true;
 		}
 
-		if (move.selfdestruct) {
-			this.faint(pokemon, pokemon, move);
-		}
-
-		if (!move.negateSecondary && !(pokemon.hasAbility('sheerforce') && pokemon.volatiles['sheerforce'])) {
+		if (!move.negateSecondary && !(move.hasSheerForce && pokemon.hasAbility('sheerforce'))) {
 			this.singleEvent('AfterMoveSecondarySelf', move, null, pokemon, target, move);
 			this.runEvent('AfterMoveSecondarySelf', pokemon, target, move);
 		}
 		return true;
 	},
-	tryMoveHit: function (target, pokemon, move, spreadHit) {
-		if (move.selfdestruct && spreadHit) pokemon.hp = 0;
-
+	tryMoveHit: function (target, pokemon, move) {
 		this.setActiveMove(move, pokemon, target);
 		let hitResult = true;
 
@@ -294,7 +330,7 @@ exports.BattleScripts = {
 		}
 		if (this.gen >= 7 && move.pranksterBoosted && target.side !== pokemon.side && !this.getImmunity('prankster', target)) {
 			this.debug('natural prankster immunity');
-			this.add('-hint', "In gen 7, Dark is immune to Prankster moves.");
+			if (!target.illusion) this.add('-hint', "In gen 7, Dark is immune to Prankster moves.");
 			this.add('-immune', target, '[msg]');
 			return false;
 		}
@@ -327,8 +363,10 @@ exports.BattleScripts = {
 		if (move.ohko) { // bypasses accuracy modifiers
 			if (!target.isSemiInvulnerable()) {
 				accuracy = 30;
+				if (move.ohko === 'Ice' && this.gen >= 7 && !pokemon.hasType('Ice')) {
+					accuracy = 20;
+				}
 				if (pokemon.level >= target.level && (move.ohko === true || !target.hasType(move.ohko))) {
-					// TODO: Research dependency of accuracy on user typing
 					accuracy += (pokemon.level - target.level);
 				} else {
 					this.add('-immune', target, '[ohko]');
@@ -480,7 +518,7 @@ exports.BattleScripts = {
 
 		this.eachEvent('Update');
 
-		if (target && !move.negateSecondary && !(pokemon.hasAbility('sheerforce') && pokemon.volatiles['sheerforce'])) {
+		if (target && !move.negateSecondary && !(move.hasSheerForce && pokemon.hasAbility('sheerforce'))) {
 			this.singleEvent('AfterMoveSecondary', move, null, target, pokemon, move);
 			this.runEvent('AfterMoveSecondary', target, pokemon, move);
 		}
@@ -575,6 +613,16 @@ exports.BattleScripts = {
 			// basically, these values have the same meanings as they do for event
 			// handlers.
 
+			if (damage === false || damage === null) {
+				if (damage === false && !isSecondary && !isSelf) {
+					this.add('-fail', target);
+				}
+				this.debug('damage calculation interrupted');
+				return false;
+			}
+			if (move.selfdestruct === 'ifHit') {
+				this.faint(pokemon, pokemon, move);
+			}
 			if ((damage || damage === 0) && !target.fainted) {
 				if (move.noFaint && damage >= target.hp) {
 					damage = target.hp - 1;
@@ -585,13 +633,6 @@ exports.BattleScripts = {
 					return false;
 				}
 				didSomething = true;
-			}
-			if (damage === false || damage === null) {
-				if (damage === false && !isSecondary && !isSelf) {
-					this.add('-fail', target);
-				}
-				this.debug('damage calculation interrupted');
-				return false;
 			}
 
 			if (moveData.boosts && !target.fainted) {
@@ -667,9 +708,12 @@ exports.BattleScripts = {
 				return false;
 			}
 		}
-		if (moveData.self) {
+		if (moveData.self && !move.selfDropped) {
 			let selfRoll;
-			if (!isSecondary && moveData.self.boosts) selfRoll = this.random(100);
+			if (!isSecondary && moveData.self.boosts) {
+				selfRoll = this.random(100);
+				if (!move.multihit) move.selfDropped = true;
+			}
 			// This is done solely to mimic in-game RNG behaviour. All self drops have a 100% chance of happening but still grab a random number.
 			if (typeof moveData.self.chance === 'undefined' || selfRoll < moveData.self.chance) {
 				this.moveHit(pokemon, pokemon, move, moveData.self, isSecondary, true);
@@ -729,7 +773,7 @@ exports.BattleScripts = {
 		if (!skipChecks) {
 			if (pokemon.side.zMoveUsed) return;
 			if (!item.zMove) return;
-			if (item.zMoveUser && !item.zMoveUser.includes(pokemon.species)) return;
+			if (item.zMoveUser && !item.zMoveUser.includes(pokemon.template.species)) return;
 			let moveData = pokemon.getMoveData(move);
 			if (!moveData || !moveData.pp) return; // Draining the PP of the base move prevents the corresponding Z-move from being used.
 		}
@@ -740,7 +784,7 @@ exports.BattleScripts = {
 			if (move.type === item.zMoveType) {
 				if (move.category === "Status") {
 					return move.name;
-				} else {
+				} else if (move.zMovePower) {
 					return this.zMoveTable[move.type];
 				}
 			}
@@ -772,10 +816,14 @@ exports.BattleScripts = {
 		if (pokemon.side.zMoveUsed) return;
 		let item = pokemon.getItem();
 		if (!item.zMove) return;
-		if (item.zMoveUser && !item.zMoveUser.includes(pokemon.species)) return;
+		if (item.zMoveUser && !item.zMoveUser.includes(pokemon.template.species)) return;
 		let atLeastOne = false;
 		let zMoves = [];
 		for (let i = 0; i < pokemon.moves.length; i++) {
+			if (pokemon.moveset[i].pp <= 0) {
+				zMoves.push(null);
+				continue;
+			}
 			let move = this.getMove(pokemon.moves[i]);
 			let zMoveName = this.getZMove(move, pokemon, true) || '';
 			if (zMoveName) {
