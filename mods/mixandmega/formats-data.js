@@ -9,10 +9,6 @@ exports.BattleFormatsData = {
 		inherit: true,
 		tier: "OU",
 	},
-	darkrai: {
-		inherit: true,
-		tier: "OU",
-	},
 	deoxysdefense: {
 		inherit: true,
 		tier: "OU",
@@ -21,11 +17,23 @@ exports.BattleFormatsData = {
 		inherit: true,
 		tier: "OU",
 	},
+	dragonite: {
+		inherit: true,
+		tier: "Uber",
+	},
 	genesect: {
 		inherit: true,
 		tier: "OU",
 	},
+	kyuremblack: {
+		inherit: true,
+		tier: "Uber",
+	},
 	landorus: {
+		inherit: true,
+		tier: "OU",
+	},
+	marshadow: {
 		inherit: true,
 		tier: "OU",
 	},
@@ -36,9 +44,5 @@ exports.BattleFormatsData = {
 	slaking: {
 		inherit: true,
 		tier: "Uber",
-	},
-	shayminsky: {
-		inherit: true,
-		tier: "OU",
 	},
 };
