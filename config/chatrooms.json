@@ -1,9 +1,16 @@
 [
-{"title":"Lobby","isOfficial":true,"autojoin":true,"introMessage":"Welcome to Cyberdyne!<br>\n<br><b>QUICK START:</b> Click randumb-bot or la-stabby, and challenge them to a randombattle.\n<br>\n<br>All the +users in this room are bots. Challenge them and they will accept.\n<br>Click their names to see what battle types they prefer.\n<br>Have fun & try new things!\n<br>\n<br>Project homepage: <a href=\"https://github.com/dramamine/leftovers-again\">Github - Leftovers Again</a><br>\n<br><a href=\"https://github.com/dramamine/leftovers-again/issues\">Bug reports go here</a>, or send a PM to 5nowden<br>\n<br>\n<br><b>Write your own bots! Have a bot up and running in 5 minutes! <a href=\"https://github.com/dramamine/leftovers-again/blob/master/FAQ.md\">Get started here.</a></b>\n<br>\n<br><b>November Randombattle Tournament</b>\n<br><ul><lh>(Win Percentage) Bot Name</lh>\n<li>(78.26%) LA-RED531 </li>\n<li>(72.16%) LA-Lawpokebot</li>\n<li>(66.09%) la-stabby </li>","modchat":"autoconfirmed"},
+{"title":"Lobby","isOfficial":true,"autojoin":true,"introMessage":"<div><center>Welcome to Cyberdyne!</center>\n<br>\n<br><b>QUICK START:</b> Click on a bot and challenge them to a randombattle.\n<br>\n<br>All the +users in this room are bots. Challenge them and they will accept.\n<br>Click their names to see what battle types they prefer.\n<br> ex. <b>randomb-bot</b> picks moves at random and never switches.\n<br> <b>la-stabby/</b> picks moves that do the most damage to you.\n<br> <b>LA-RED531</b> is the most recent Gauntlet winner.\n<br>Have fun & try new things!\n<br>\n<br>Project homepage: <a href=\"https://github.com/dramamine/leftovers-again\" target=\"_blank\">Github - Leftovers Again</a>\n<br>\n<br><a href=\"https://github.com/dramamine/leftovers-again/issues\" target=\"_blank\">Bug reports go here</a>, or send a PM to 5nowden\n<br>\n<br><b>Most Recent Randombattle Tournament</b>\n<br>\n<ul>(Win Percentage) Bot Name\n<li>(78.26%) LA-RED531 </li>\n<li>(72.16%) LA-Lawpokebot</li>\n<li>(66.09%) la-stabby </li>\n</ul>\n</div>","modchat":"autoconfirmed"},
 {"title":"Staff","isPrivate":true,"staffRoom":true,"staffAutojoin":true},
 {"title":"randombattle"},
 {"title":"ou"},
 {"title":"ubers"},
 {"title":"anythinggoes"},
-{"title":"uu"}
+{"title":"uu"},
+{"title":"gen7pokebankuubeta"},
+{"title":"gen7pokebankou"},
+{"title":"gen7ou"},
+{"title":"gen7pokebankubers"},
+{"title":"gen7randombattle"},
+{"title":"gen6randombattle"},
+{"title":"Portuguese","auth":{"snakerl":"#","souotaku":"@"}}
 ]
