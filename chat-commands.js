@@ -20,8 +20,6 @@
 const crypto = require('crypto');
 const FS = require('./fs');
 
-const Matchmaker = require('./ladders-matchmaker').matchmaker;
-
 const MAX_REASON_LENGTH = 300;
 const MUTE_LENGTH = 7 * 60 * 1000;
 const HOURMUTE_LENGTH = 60 * 60 * 1000;
@@ -865,6 +863,26 @@ exports.commands = {
 			room.isOfficial = true;
 			this.addModCommand(`${user.name} made this chat room official.`);
 			room.chatRoomData.isOfficial = true;
+			Rooms.global.writeChatRoomData();
+		}
+	},
+
+	psplwinnerroom: function (target, room, user) {
+		if (!this.can('makeroom')) return;
+		if (!room.chatRoomData) {
+			return this.errorReply(`/psplwinnerroom - This room can't be marked as a PSPL Winner room`);
+		}
+		if (target === 'off') {
+			if (!room.pspl) return this.errorReply(`This chat room is already not a PSPL Winner room.`);
+			delete room.pspl;
+			this.addModCommand(`${user.name} made this chat room no longer a PSPL Winner room.`);
+			delete room.chatRoomData.pspl;
+			Rooms.global.writeChatRoomData();
+		} else {
+			if (room.pspl) return this.errorReply("This chat room is already a PSPL Winner room.");
+			room.pspl = true;
+			this.addModCommand(`${user.name} made this chat room a PSPL Winner room.`);
+			room.chatRoomData.pspl = true;
 			Rooms.global.writeChatRoomData();
 		}
 	},
@@ -2112,7 +2130,7 @@ exports.commands = {
 
 		let entry = targetUser.name + " was forced to choose a new name by " + user.name + (reason ? ": " + reason : "");
 		this.privateModCommand("(" + entry + ")");
-		Matchmaker.cancelSearch(targetUser);
+		Ladders.matchmaker.cancelSearch(targetUser);
 		targetUser.resetName(true);
 		targetUser.send("|nametaken||" + user.name + " considers your name inappropriate" + (reason ? ": " + reason : "."));
 		return true;
@@ -2132,9 +2150,9 @@ exports.commands = {
 		if (!this.can('forcerename', targetUser)) return false;
 		if (targetUser.namelocked) return this.errorReply(`User '${targetUser.name}' is already namelocked.`);
 
-		let reasonText = reason ? ` (${reason})` : `.`;
-		let lockMessage = `${targetUser.name} was namelocked by ${user.name}${reasonText}`;
-		this.addModCommand(lockMessage, ` (${targetUser.latestIp})`);
+		const reasonText = reason ? ` (${reason})` : `.`;
+		const lockMessage = `${targetUser.name} was namelocked by ${user.name}${reasonText}`;
+		this.privateModCommand(`(${lockMessage})`, ` (${targetUser.latestIp})`);
 
 		// Notify staff room when a user is locked outside of it.
 		if (room.id !== 'staff' && Rooms('staff')) {
@@ -2142,7 +2160,7 @@ exports.commands = {
 		}
 
 		this.globalModlog("NAMELOCK", targetUser, ` by ${user.name}${reasonText}`);
-		Matchmaker.cancelSearch(targetUser);
+		Ladders.matchmaker.cancelSearch(targetUser);
 		Punishments.namelock(targetUser, null, null, reason);
 		targetUser.popup(`|modal|${user.name} has locked your name and you can't change names anymore${reasonText}`);
 		return true;
@@ -2173,6 +2191,7 @@ exports.commands = {
 	unnamelockhelp: ["/unnamelock [username] - Unnamelocks the user. Requires: % @ * & ~"],
 
 	hidetextalts: 'hidetext',
+	hidealttext: 'hidetext',
 	hidealtstext: 'hidetext',
 	hidetext: function (target, room, user, connection, cmd) {
 		if (!target) return this.parse('/help hidetext');
@@ -2191,7 +2210,7 @@ exports.commands = {
 			return this.errorReply("User '" + name + "' is not banned from this room or locked.");
 		}
 
-		if (cmd === 'hidealtstext' || cmd === 'hidetextalts') {
+		if (cmd === 'hidealtstext' || cmd === 'hidetextalts' || cmd === 'hidealttext') {
 			this.addModCommand(`${targetUser.name}'s alts' messages were cleared from ${room.title} by ${user.name}.`);
 			this.add(`|unlink|${hidetype}${userid}`);
 
@@ -2210,7 +2229,7 @@ exports.commands = {
 	},
 	hidetexthelp: [
 		"/hidetext [username] - Removes a locked or banned user's messages from chat (includes users banned from the room). Requires: % (global only), @ * # & ~",
-		"/hidealtstext OR /hidetextalts [username] - Removes a locked or banned user's messages, and their alternate account's messages from the chat (includes users banned from the room).  Requires: % (global only), @ * # & ~",
+		"/hidealtstext [username] - Removes a locked or banned user's messages, and their alternate account's messages from the chat (includes users banned from the room).  Requires: % (global only), @ * # & ~",
 	],
 
 	ab: 'blacklist',
@@ -3290,7 +3309,6 @@ exports.commands = {
 	 *********************************************************/
 
 	'!search': true,
-	cancelsearch: 'search',
 	search: function (target, room, user) {
 		if (target) {
 			if (Config.laddermodchat) {
@@ -3301,9 +3319,18 @@ exports.commands = {
 					return false;
 				}
 			}
-			Matchmaker.searchBattle(user, target);
+			Ladders.matchmaker.searchBattle(user, target);
 		} else {
-			Matchmaker.cancelSearch(user, target);
+			Ladders.matchmaker.cancelSearches(user);
+		}
+	},
+
+	'!cancelsearch': true,
+	cancelsearch: function (target, room, user) {
+		if (target) {
+			Ladders.matchmaker.cancelSearch(user, target);
+		} else {
+			Ladders.matchmaker.cancelSearches(user);
 		}
 	},
 
@@ -3331,6 +3358,9 @@ exports.commands = {
 				this.popupReply("Because moderated chat is set, you must be of rank " + groupName + " or higher to challenge users.");
 				return false;
 			}
+		}
+		if (targetUser === user) {
+			return this.popupReply("You can't battle yourself. The best you can do is open PS in Private Browsing (or another browser) and log into a different username, and battle that username.");
 		}
 		user.prepBattle(Dex.getFormat(target).id, 'challenge', connection).then(validTeam => {
 			if (validTeam === false) return;
