@@ -91,7 +91,7 @@ exports.BattleAbilities = {
 		suppressWeather: true,
 		id: "airlock",
 		name: "Air Lock",
-		rating: 3,
+		rating: 2.5,
 		num: 76,
 	},
 	"analytic": {
@@ -354,7 +354,7 @@ exports.BattleAbilities = {
 		},
 		id: "bulletproof",
 		name: "Bulletproof",
-		rating: 3,
+		rating: 3.5,
 		num: 171,
 	},
 	"cheekpouch": {
@@ -377,7 +377,7 @@ exports.BattleAbilities = {
 		},
 		id: "chlorophyll",
 		name: "Chlorophyll",
-		rating: 2.5,
+		rating: 3,
 		num: 34,
 	},
 	"clearbody": {
@@ -406,7 +406,7 @@ exports.BattleAbilities = {
 		suppressWeather: true,
 		id: "cloudnine",
 		name: "Cloud Nine",
-		rating: 3,
+		rating: 2.5,
 		num: 13,
 	},
 	"colorchange": {
@@ -580,8 +580,9 @@ exports.BattleAbilities = {
 			this.add('-ability', pokemon, 'Dark Aura');
 		},
 		onAnyBasePower: function (basePower, source, target, move) {
-			if (target === source || move.category === 'Status' || move.type !== 'Dark') return;
-			return this.chainModify([move.hasAuraBreak ? 0x0C00 : 0x1547, 0x1000]);
+			if (target === source || move.category === 'Status' || move.type !== 'Dark' || move.auraBoost) return;
+			move.auraBoost = move.hasAuraBreak ? 0x0C00 : 0x1547;
+			return this.chainModify([move.auraBoost, 0x1000]);
 		},
 		isUnbreakable: true,
 		id: "darkaura",
@@ -820,7 +821,7 @@ exports.BattleAbilities = {
 		id: "earlybird",
 		name: "Early Bird",
 		// Implemented in statuses.js
-		rating: 2.5,
+		rating: 2,
 		num: 48,
 	},
 	"effectspore": {
@@ -885,8 +886,9 @@ exports.BattleAbilities = {
 			this.add('-ability', pokemon, 'Fairy Aura');
 		},
 		onAnyBasePower: function (basePower, source, target, move) {
-			if (target === source || move.category === 'Status' || move.type !== 'Fairy') return;
-			return this.chainModify([move.hasAuraBreak ? 0x0C00 : 0x1547, 0x1000]);
+			if (target === source || move.category === 'Status' || move.type !== 'Fairy' || move.auraBoost) return;
+			move.auraBoost = move.hasAuraBreak ? 0x0C00 : 0x1547;
+			return this.chainModify([move.auraBoost, 0x1000]);
 		},
 		isUnbreakable: true,
 		id: "fairyaura",
@@ -2246,7 +2248,7 @@ exports.BattleAbilities = {
 		},
 		id: "owntempo",
 		name: "Own Tempo",
-		rating: 1,
+		rating: 1.5,
 		num: 20,
 	},
 	"parentalbond": {
@@ -2481,7 +2483,7 @@ exports.BattleAbilities = {
 		},
 		id: "pressure",
 		name: "Pressure",
-		rating: 1.5,
+		rating: 2,
 		num: 46,
 	},
 	"primordialsea": {
@@ -2714,7 +2716,7 @@ exports.BattleAbilities = {
 		},
 		id: "rockhead",
 		name: "Rock Head",
-		rating: 3,
+		rating: 2.5,
 		num: 69,
 	},
 	"roughskin": {
@@ -2771,7 +2773,7 @@ exports.BattleAbilities = {
 		},
 		id: "sandrush",
 		name: "Sand Rush",
-		rating: 2.5,
+		rating: 3,
 		num: 146,
 	},
 	"sandstream": {
@@ -2859,7 +2861,7 @@ exports.BattleAbilities = {
 		},
 		id: "schooling",
 		name: "Schooling",
-		rating: 2.5,
+		rating: 3,
 		num: 208,
 	},
 	"scrappy": {
@@ -3029,7 +3031,7 @@ exports.BattleAbilities = {
 		isUnbreakable: true,
 		id: "shieldsdown",
 		name: "Shields Down",
-		rating: 2.5,
+		rating: 3,
 		num: 197,
 	},
 	"simple": {
@@ -3412,7 +3414,7 @@ exports.BattleAbilities = {
 		},
 		id: "suctioncups",
 		name: "Suction Cups",
-		rating: 2,
+		rating: 1.5,
 		num: 21,
 	},
 	"superluck": {
@@ -3489,7 +3491,7 @@ exports.BattleAbilities = {
 		},
 		id: "swiftswim",
 		name: "Swift Swim",
-		rating: 2.5,
+		rating: 3,
 		num: 33,
 	},
 	"symbiosis": {
@@ -3813,7 +3815,7 @@ exports.BattleAbilities = {
 		},
 		id: "victorystar",
 		name: "Victory Star",
-		rating: 2.5,
+		rating: 3,
 		num: 162,
 	},
 	"vitalspirit": {
