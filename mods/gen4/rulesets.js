@@ -3,7 +3,6 @@
 exports.BattleFormats = {
 	pokemon: {
 		inherit: true,
-		effectType: 'Banlist',
 		onValidateSet: function (set) {
 			let template = this.getTemplate(set.species);
 			let item = this.getItem(set.item);
@@ -16,5 +15,11 @@ exports.BattleFormats = {
 				}
 			}
 		},
+	},
+	evasionabilitiesclause: {
+		inherit: true,
+		banlist: ['Diglett + Sand Veil', 'Dugtrio + Sand Veil', 'Gligar + Sand Veil', 'Gliscor + Sand Veil',
+			'Swinub + Snow Cloak', 'Piloswine + Snow Cloak', 'Mamoswine + Snow Cloak',
+		],
 	},
 };
