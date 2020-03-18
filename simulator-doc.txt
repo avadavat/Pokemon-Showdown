@@ -36,7 +36,7 @@ for every move:
 	[ModifyPriority]
 	move's [BeforeTurn]
 
-runDecision() - runs runSwitch, runAfterSwitch, and runMove in priority order, then residual at end {
+runAction() - runs runSwitch, runAfterSwitch, and runMove in priority order, then residual at end {
 	runSwitch() {
 		[BeforeSwitch]
 		switch
@@ -82,13 +82,11 @@ runDecision() - runs runSwitch, runAfterSwitch, and runMove in priority order, t
 					[Damage] (A,U)
 					-> false => exit damage()
 					damage
-					[AfterDamage] (U)
 				}
 				heal() {
 					[Heal] (A)
 					-> false => exit heal()
 					heal
-					[AfterHeal]
 				}
 				status() (U) {
 					[Status] (A)
